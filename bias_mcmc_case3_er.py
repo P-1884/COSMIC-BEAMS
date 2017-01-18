@@ -71,7 +71,9 @@ def PI(x):
 
 ###############Data manipulation###############
 
-zt,z2,mu_obs,sig_mu_obs = np.loadtxt('../data/fakedata1_er.txt',
+ds = sys.argv[1]
+
+zt,z2,mu_obs,sig_mu_obs = np.loadtxt('../data/fakedata'+ds+'_er.txt',
                                      usecols=[0,1,2,3],unpack=True)
 
 """
@@ -95,7 +97,7 @@ sig_mu_obs2 = []
 
 missID = np.empty(len(zt))
 snpop = 0.09
-rand.seed(7)
+rand.seed(6+int(ds))
 for i in range(len(zt)):
     MC = rand.random()
     if zt[i] > 0.1 and MC < snpop:
@@ -144,7 +146,7 @@ wstep = 0.07
 
 print('Generating biased posterior')
 
-fout = open('../data/bias_chain_fd1_case3_er.txt','w')
+fout = open('../data/bias_chain_fd'+ds+'_case3_er.txt','w')
 fout.write('#o_m \t H0 \t w \n')
 for i in range(0,n-1):
     #current position:

@@ -53,6 +53,9 @@ def dmudz(z,OM,H0,w):
 
 dmu_vectorized = np.vectorize(dmudz)
 
+def dmudz_Milne(z):
+    return 5/np.log(10)/z
+
 def dmu_interp(z,OM,H0,w):
     z_spl = np.linspace(np.min(z),np.max(z),50)
     dmu_spl = dmu_vectorized(z_spl,OM,H0,w)
@@ -71,10 +74,12 @@ def PI(x):
 
 ###############Data manipulation###############
 
-z_obs,mu_obs,sig_mu_obs = np.loadtxt('../data/fakedata1_er.txt',
+ds = sys.argv[1]
+
+z_obs,mu_obs,sig_mu_obs = np.loadtxt('../data/fakedata'+ds+'_er.txt',
                                      usecols=[0,2,3],unpack=True)
 
-erm = 'c' #'a' or 'b' or 'c' (how we deal with error)
+erm = sys.argv[2] #'a' or 'b' or 'c' (how we deal with error)
 
 z_obs0 = []
 z_obs1 = []
@@ -96,7 +101,7 @@ z_obs0: contaminated sample
 z_obs1: non-contaminants only
 z_obs2: contaminants only"""
 
-rand.seed(7)
+rand.seed(6+int(ds))
 for i in range(0,len(z_obs)):
     MC = rand.random()
     if MC > snpop:
@@ -111,11 +116,11 @@ for i in range(0,len(z_obs)):
         z_obs0.append(shifted_z_obs)
         z_obs2.append(shifted_z_obs)
         mu_obs2.append(mu_obs[i])
-        dmu = dmudz(z_obs[i],0.31,67.74,-1)
+        dmu = dmudz_Milne(shifted_z_obs)
         if erm == 'a' or erm =='c':
             sig_mu_obs2.append(sig_mu_obs[i])#a/c
         elif erm =='b':
-            sig_mu_obs2.append(np.sqrt(sig_mu_obs[i]**2 + (dmu*shift*(1+z_obs[i]))**2))#b
+            sig_mu_obs2.append(np.sqrt(sig_mu_obs[i]**2 + (dmu*shift*(1+shifted_z_obs))**2))#b
 
 sig_mu_obs2 = np.array(sig_mu_obs2)
 z_obs0 = np.array(z_obs0)
@@ -147,7 +152,7 @@ wstep = 0.07
 
 print('Generating biased posterior')
 
-fout = open('../data/bias_chain_fd1_case2.1_'+erm+'_er.txt','w') 
+fout = open('../data/bias_chain_fd'+ds+'_case2.1_'+erm+'_er.txt','w') 
 #a refers to the errorbar compensation (i.e. none)
 #b refers to the errorbar compensation (i.e. outside the loop with fiducial model)
 #c refers to the errorbar compensation (i.e. inside the loop with fiducial model)
