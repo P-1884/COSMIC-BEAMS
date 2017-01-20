@@ -58,7 +58,9 @@ def PI(x):
 
 ###############Data manipulation###############
 
-z_obs,mu_obs,sig_mu_obs = np.loadtxt('../data/fakedata1_er.txt',
+ds = sys.argv[1]
+
+z_obs,mu_obs,sig_mu_obs = np.loadtxt('../data/fakedata'+ds+'_er.txt',
                                      usecols=[0,2,3],unpack=True)
 
 
@@ -88,7 +90,7 @@ wstep = 0.07
 
 print('Generating unbiased posterior')
 
-fout = open('../data/bias_chain_fd1_nobias_er.txt','w')
+fout = open('../data/bias_chain_fd'+ds+'_nobias_er.txt','w')
 fout.write('#o_m \t H0 \t w \n')
 for i in range(0,n-1):
     #current position:
