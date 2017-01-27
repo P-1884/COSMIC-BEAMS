@@ -42,11 +42,12 @@ def converge(root, chainname, burn, nchains):
         print(i)
         #chains.append(loadtxt(root+ chainname %(i,i))[0::2, :])
         chains.append(loadtxt(root+ chainname %(i))[:, :])
-    p = range(len(chains[0][0, :-1]))
+    p = arange(len(chains[0][0, :-1]))
+
     #Jump in steps of 5000 from the burn-in
     jump=5000
-    for step in range(burn, 200000, jump):
-        print(step)
+    for step in arange(burn, 200000, jump):
+        #print(step)
         chains_new = []
         gel = []
         for i in p:
@@ -59,13 +60,13 @@ def converge(root, chainname, burn, nchains):
 
             gel.append(gelman(chains_new, i))
         
-        print(gel)
+
         if max(gel)<1.01:
             #return step #We have converged
             break
             
     #Now we know at what step to start with, now we can calculate at exactly what point we converged
-    for s in range(step-jump,  step, 200):
+    for s in arange(step-jump,  step, 200):
         chains_new = []
         gel = []
         for i in p:
@@ -79,11 +80,12 @@ def converge(root, chainname, burn, nchains):
 def converge_from_list(chains, jump=500):
     
     nchains=len(chains)
-    p = range(len(chains[0][0, :]))
+    p = arange(len(chains[0][0, :]))
+
     #Jump in steps of 5000 from the burn-in
     #jump=5000
     for step in range(jump, 200000, jump):
-        #print(step)
+        # print(step)
         chains_new = []
         for j in range(len(chains)):
             #print len(chains[j][:,0])
@@ -95,7 +97,7 @@ def converge_from_list(chains, jump=500):
         for i in p:
             gel.append(gelman(chains_new, i))
         
-        #print gel
+        # print(gel)
         if max(gel)<1.01:
             #return step #We have converged
             break
@@ -103,8 +105,8 @@ def converge_from_list(chains, jump=500):
     #Now we know at what step to start with, now we can calculate at exactly what point we converged
     dx=jump//10
     startpoint=step-jump+dx
-    for s in range(startpoint,  step, dx):
-        #print(s)
+
+    for s in arange(startpoint,  step, dx):
         chains_new = []
         gel = []
         for j in range(len(chains)):
