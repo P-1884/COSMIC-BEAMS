@@ -1,3 +1,4 @@
+from __future__ import division, print_function
 import sys
 from numpy import *
 
@@ -38,14 +39,14 @@ def converge(root, chainname, burn, nchains):
     #burn=10000 #Burn-in
     for i in range(nchains):
     #for i in [0,2]:
-        print i
+        print(i)
         #chains.append(loadtxt(root+ chainname %(i,i))[0::2, :])
         chains.append(loadtxt(root+ chainname %(i))[:, :])
     p = range(len(chains[0][0, :-1]))
     #Jump in steps of 5000 from the burn-in
     jump=5000
     for step in range(burn, 200000, jump):
-        print step
+        print(step)
         chains_new = []
         gel = []
         for i in p:
@@ -58,7 +59,7 @@ def converge(root, chainname, burn, nchains):
 
             gel.append(gelman(chains_new, i))
         
-        print gel
+        print(gel)
         if max(gel)<1.01:
             #return step #We have converged
             break
@@ -82,7 +83,7 @@ def converge_from_list(chains, jump=500):
     #Jump in steps of 5000 from the burn-in
     #jump=5000
     for step in range(jump, 200000, jump):
-        print step
+        #print(step)
         chains_new = []
         for j in range(len(chains)):
             #print len(chains[j][:,0])
@@ -100,10 +101,10 @@ def converge_from_list(chains, jump=500):
             break
             
     #Now we know at what step to start with, now we can calculate at exactly what point we converged
-    dx=jump/10
+    dx=jump//10
     startpoint=step-jump+dx
     for s in range(startpoint,  step, dx):
-        print s
+        #print(s)
         chains_new = []
         gel = []
         for j in range(len(chains)):
@@ -111,7 +112,7 @@ def converge_from_list(chains, jump=500):
         for i in p:
             gel.append(gelman(chains_new, i))
         if max(gel)<1.01:
-            print gel
+            print('Gelman-Rubin coefficients', gel)
             return s+startpoint #We have converged
             
     
