@@ -1,6 +1,6 @@
 #  Code to plot a contour from an MCMC chain
 #  Author: Michelle Knights (2013)
-
+from __future__ import division, print_function
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import interpolate
