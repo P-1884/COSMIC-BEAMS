@@ -40,7 +40,7 @@ def findconfidence(H):
 #kwargs: labels= the labels of the parameters (list of strings)
 #               col=a tuple of the two colours for the contour plot
 #               line=boolean whether or not to just do a line contour plot
-def contour(chain,p,**kwargs):
+def contour(chain,p, level=0,**kwargs):
     binsize=50
     H, xedges, yedges = np.histogram2d(chain[:,p[0]],chain[:,p[1]], bins=(binsize,binsize))
     
@@ -89,11 +89,19 @@ def contour(chain,p,**kwargs):
         col =('#a3c0f6','#0057f6') #A pretty blue
         
 
+    if level==1:
+        levs = [N68, N100]
+    elif level==2:
+        levs = [N95, N100]
+    else:
+        levs = [N95, N68, N100]
+
+
 
     if 'line' in kwargs and kwargs['line']==True:
-        plt.contour(X, Y,Z,levels=[N95,N68,N100],colors=col, linewidth=100)
+        plt.contour(X, Y,Z,levels=levs,colors=col, linewidth=100)
     else:
-        plt.contourf(X, Y,Z,levels=[N95,N68,N100],colors=col)
+        plt.contourf(X, Y,Z,levels=levs,colors=col)
     if 'labels' in kwargs:
         labels=kwargs['labels']
         plt.xlabel(labels[0],fontsize=22)
