@@ -12,9 +12,10 @@ python plot_contour_spectroscopic.py #plot the 3 posteriors shown above
 #photometric case
 python plot_data_photometric.py #visualise data
 
-python mcmc_photometric.py nb 0 #generate unbiased posterior with mcmc
-python mcmc_photometric.py bi 0 #generate biased posterior with mcmc
+python mcmc_photometric.py nb 0 #generate unbiased posterior with mcmc (very inefficient**)
+python mcmc_photometric.py bi 0 #generate biased posterior with mcmc (very inefficient**)
 python mcmc_photometric.py bi 1 #generate posterior using zBEAMS
+#** reduce 'n' steps to 50000 and thinning to 1 and set burnin to 0 so that code runs much faster.
 
 python process_z_chains.py #post-process all the redshift chains for plots
 
