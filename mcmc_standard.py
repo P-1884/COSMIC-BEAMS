@@ -21,8 +21,7 @@ parent_dir/
 
 ###############Inputs###############
 
-ds = sys.argv[1]
-bias = sys.argv[2]
+bias = sys.argv[1]
 if bias == 'nb':
     column = 0
     biasname='nobias'
