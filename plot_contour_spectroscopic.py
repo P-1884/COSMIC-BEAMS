@@ -17,9 +17,9 @@ from zbeamsfunctions import contour
 
 ###############MCMC points###############
 
-nb_mcmc_file = '../data/mcmc_chain_nobias.txt'
-bi_mcmc_file = '../data/mcmc_chain_bias.txt'
-zb_mcmc_file = '../data/mcmc_chain_zbeams.txt'
+nb_mcmc_file = 'mcmc_chain_nobias.txt'
+bi_mcmc_file = 'mcmc_chain_bias.txt'
+zb_mcmc_file = 'mcmc_chain_zbeams.txt'
 
 om_nb,H0_nb,w_nb = np.loadtxt(nb_mcmc_file, usecols=[0,1,2],unpack=True)
 om_bi,H0_bi,w_bi = np.loadtxt(bi_mcmc_file, usecols=[0,1,2],unpack=True)

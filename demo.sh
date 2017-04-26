@@ -10,8 +10,6 @@ python mcmc_spectroscopic.py #generate posterior using zBEAMS on biased data
 python plot_contour_spectroscopic.py #plot the 3 posteriors shown above
 
 #photometric case
-python plot_data_photometric.py #visualise data
-
 python mcmc_photometric.py nb 0 #generate unbiased posterior with mcmc (very inefficient**)
 python mcmc_photometric.py bi 0 #generate biased posterior with mcmc (very inefficient**)
 python mcmc_photometric.py bi 1 #generate posterior using zBEAMS
@@ -19,4 +17,8 @@ python mcmc_photometric.py bi 1 #generate posterior using zBEAMS
 
 python process_z_chains.py #post-process all the redshift chains for plots
 
+python plot_data_photometric.py #visualise data
+
 python plot_contour_photometric.py #plot the 3 posteriors shown above
+
+python plot_redshifts_photometric.py #plot 998 redshift histograms
