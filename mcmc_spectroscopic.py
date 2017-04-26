@@ -81,7 +81,7 @@ accept = 0
 log_like_proposed = 0
 accept_list = []
 
-print('Generating biased posterior')
+print('Generating posterior')
 
 fout = open('mcmc_chain_zbeams.txt','w')
 fout.write('#o_m \t H0 \t w \n')
