@@ -100,7 +100,7 @@ accept_list = []
 
 print('Generating biased posterior')
 
-fout = open('../data/mcmc_chain_'+biasname+'.txt','w')
+fout = open('mcmc_chain_'+biasname+'.txt','w')
 fout.write('#o_m \t H0 \t w \n')
 for i in range(0,n-1):
     #current position:
