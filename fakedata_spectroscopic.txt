@@ -2,7 +2,7 @@
 # Error in mu 0.20 for Ia and 1.50 for nonaIa 
 # Type=1 for Ia, 0 otherwise 
 # cor_z=1 if z_obs correct host, 0 otherwise 
-# z_true z_obs z_2 mu_t mu_o type cor_z 
+# z_true z_obs z_alt mu_true mu_obs cor_type cor_z 
 0.016	0.016	0.016	34.207	34.273	1	1
 0.016	0.016	0.016	34.254	34.187	1	1
 0.02	0.02	0.02	34.716	34.583	1	1
