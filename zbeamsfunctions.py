@@ -91,7 +91,7 @@ def likelihood_spec(z,z2,muo,sigmuo,sigmuo2,P_gamma,P_tau,offset,OM,H0,w):
     L2 = P_tau*(1-P_gamma)*((1/np.sqrt(2*np.pi*sigmuo**2))*np.exp(-chi2_2/2))
     L3 = (1-P_tau)*(P_gamma)*((1/np.sqrt(2*np.pi*sigmuo2**2))*np.exp(-chi2_3/2))
     L4 = (1-P_tau)*(1-P_gamma)*((1/np.sqrt(2*np.pi*sigmuo2**2))*np.exp(-chi2_4/2))
-    return L1 + L2 + L3 + L4
+    return np.sum(np.log(L1 + L2 + L3 + L4))
 
 
 def likelihood(z,muo,sigmuo,OM,H0,w):
