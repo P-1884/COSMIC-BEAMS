@@ -57,7 +57,44 @@ def likelihood_phot(z,muo,sigmuo,OM,H0,w,zo,sigzo,b):
     return likeli + prior + priorz
         
 
-def likelihood(z,muo,sigmuo,OM,H0,w,zo,sigzo):
+def likelihood_spec(z,z2,muo,sigmuo,sigmuo2,P_gamma,P_tau,offset,OM,H0,w):
+    def mu_interp(z,OM,H0,w):
+        def H(z,OM,H0,w):
+            if w==-1:
+                return H0*np.sqrt(OM*(1+z)**3+(1-OM))
+            else:
+                return H0*np.sqrt(OM*(1+z)**3+(1-OM)*(1+z)**(3*(w+1)))
+                
+        def dL(z,OM,H0,w):
+            c=2.99792e5
+            return (1+z)*quad(lambda x:c/H(x,OM,H0,w),0,z)[0]
+            
+        def mu_w(z,OM,H0,w):
+            return 5*np.log10(dL(z,OM,H0,w))+25
+                
+        mu_w_vectorized = np.vectorize(mu_w)
+                
+        z_spl = np.linspace(np.min(z),np.max(z),50)
+        mu_spl = mu_w_vectorized(z_spl,OM,H0,w)
+        tck = interpolate.splrep(z_spl, mu_spl)
+        mu_int = interpolate.splev(z, tck)
+        return mu_int
+    
+    mu_theory1 = mu_interp(z,OM,H0,w)
+    mu_theory2 = mu_interp(z2,OM,H0,w)
+    chi2_1 = ((muo-mu_theory1)/sigmuo)**2
+    chi2_2 = ((muo-mu_theory2)/sigmuo)**2
+    chi2_3 = ((muo-mu_theory1)/sigmuo2)**2
+    chi2_4 = ((muo-mu_theory2)/sigmuo2)**2
+    
+    L1 = P_tau*P_gamma*((1/np.sqrt(2*np.pi*sigmuo**2))*np.exp(-chi2_1/2))
+    L2 = P_tau*(1-P_gamma)*((1/np.sqrt(2*np.pi*sigmuo**2))*np.exp(-chi2_2/2))
+    L3 = (1-P_tau)*(P_gamma)*((1/np.sqrt(2*np.pi*sigmuo2**2))*np.exp(-chi2_3/2))
+    L4 = (1-P_tau)*(1-P_gamma)*((1/np.sqrt(2*np.pi*sigmuo2**2))*np.exp(-chi2_4/2))
+    return L1 + L2 + L3 + L4
+
+
+def likelihood(z,muo,sigmuo,OM,H0,w):
     def mu_interp(z,OM,H0,w):
         def H(z,OM,H0,w):
             if w==-1:
@@ -82,10 +119,8 @@ def likelihood(z,muo,sigmuo,OM,H0,w,zo,sigzo):
     
     mu_theory = mu_interp(z,OM,H0,w)
     chi2 = ((muo-mu_theory)/sigmuo)**2
-    chi3 = ((z-zo)/sigzo)**2
     likeli = -0.5*sum(chi2)
-    prior = -0.5*sum(chi3)
-    return likeli + prior
+    return likeli
 
 
 def contour(chain,p,**kwargs):
