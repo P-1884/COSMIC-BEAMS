@@ -10,8 +10,13 @@ import numpy as np
 import random as rand
 import sys
 
-def mcmc(n,likelihood,zbias,mubias,OMi,H0i,wi,omstep,H0step,wstep,filein,fileout,status):
-    
+def mcmc_SL(n,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wstep,db_in,fileout,status,cosmo_type,
+            contaminated=True):
+    assert cosmo_type in ['FlatLambdaCDM','LambdaCDM','FlatwCDM','wCDM']
+    if cosmo_type in ['FlatLambdaCDM','FlatwCDM']: Flat_bool=True; print('Assuming a Flat Cosmology')
+    else: Flat_bool=False; print('Allowing the cosmology to have non-zero curvature')
+    if cosmo_type in ['wCDM','FlatwCDM']: Complex_EoS_bool=True; print('Assuming Non-trivial DE EoS')
+    else: Complex_EoS_bool=False; print('Assuming w=-1')
     ###############Data manipulation###############
     
     if zbias == 'nobias':
@@ -26,27 +31,38 @@ def mcmc(n,likelihood,zbias,mubias,OMi,H0i,wi,omstep,H0step,wstep,filein,fileout
     elif mubias == 'photometric':
         columnmu = 2
     
-    z_obs,mu_obs = np.loadtxt(filein,usecols=[columnz,columnmu],unpack=True)
-    
+    zL_obs=db_in['zL_obs'].to_numpy();zS_obs=db_in['zS_obs'].to_numpy()
+    if not contaminated: r_obs=db_in['r_obs'].to_numpy()
+    if contaminated: r_obs=db_in['r_obs_contam'].to_numpy()
+    sigma_r_obs=db_in['sigma_r_obs'].to_numpy() #Making these up!!!
+    '''
+    Not sure what sigma_r_obs_0 should be if the object is not a lens?
+    '''
+    if contaminated: P_tau = db_in['P_tau'].to_numpy()
     rand.seed(7)
-    
     
     ###############MCMC code (bias)###############
     
     omlist = [] #create empty list
     H0list = []
+    odelist = []
     wlist = []
-    
+    if Flat_bool: 
+        assert OMi+Odei==1 #Assert cosmology is flat
+    if not Complex_EoS_bool: 
+        assert wi==-1 #Assert EoS of DE is -1.
+
     om_current = OMi #starting values
+    ode_current = Odei
     H0_current = H0i
     w_current = wi
     
     omlist.append(om_current) #append first value to list
     H0list.append(H0_current)
+    odelist.append(ode_current)
     wlist.append(w_current)
-    
-    sig_tau = 0.2
-    
+    sig_tau = 0.2 #Where this from???
+    sigma_r_obs_2 = 1000*np.max(sigma_r_obs) #Making this a large number so contaminants are effectively ignored
     accept = 0
     log_like_proposed = 0
     accept_list = []
@@ -54,27 +70,43 @@ def mcmc(n,likelihood,zbias,mubias,OMi,H0i,wi,omstep,H0step,wstep,filein,fileout
     print('Generating posterior')
     
     fout = open(fileout,'w')
-    fout.write('#o_m \t H0 \t w \n')
+    fout.write('#o_m\tH0\tw\tOde\n')
     for i in range(0,n-1):
         #current position:
-        if i == 0:
-            log_like_current = likelihood(z_obs,mu_obs,sig_tau,om_current,H0_current,w_current)
+        if i == 0: 
+            if not contaminated: log_like_current = likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,om_current,ode_current,H0_current,w_current,cosmo_type)
+            if contaminated: log_like_current =  likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2,P_tau,om_current,ode_current,H0_current,w_current,cosmo_type)
         elif accept == 1:
             log_like_current = log_like_proposed
-            
+        
+        #OM
         om_proposed =  rand.gauss(om_current,omstep)
         while om_proposed >= 1 or om_proposed <= 0:         #keeps Omega_matter in (0,1) 
             om_proposed =  rand.gauss(om_current,omstep)    #for numerical reasons
+        #Ode
+        if Flat_bool:
+            ode_proposed = 1-om_proposed;
+        else: #If not flat, allow Ode to vary too:
+            assert cosmo_type in ['wCDM','LambdaCDM']
+            ode_proposed = rand.gauss(ode_current,ode_step)
+            while ode_proposed>=1 or ode_proposed<=0: #keeps Omega_de in (0,1)
+                ode_proposed = rand.gauss(ode_current,ode_step)
+        #H0
         H0_proposed =  rand.gauss(H0_current,H0step)
         while H0_proposed >= 200 or H0_proposed <= 10:
             H0_proposed =  rand.gauss(H0_current,H0step)
-        w_proposed =  rand.gauss(w_current,wstep)
-        while w_proposed >= 4 or w_proposed <= -6:
+        #w0
+        if Complex_EoS_bool:
             w_proposed =  rand.gauss(w_current,wstep)
+            while w_proposed >= 4 or w_proposed <= -6:
+                w_proposed =  rand.gauss(w_current,wstep)
+        else:
+            assert cosmo_type in ['FlatLambdaCDM','LambdaCDM']
+            w_proposed=-1
             
         #proposed position:
-        log_like_proposed = likelihood(z_obs,mu_obs,sig_tau,om_proposed,H0_proposed,w_proposed)
-        
+        if not contaminated: log_like_proposed = likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,om_proposed,ode_proposed,H0_proposed,w_proposed,cosmo_type)
+        if contaminated: log_like_proposed = likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2,P_tau,om_proposed,ode_proposed,H0_proposed,w_proposed,cosmo_type)
         #decision:
         r = np.exp(log_like_proposed - log_like_current)
         
@@ -83,20 +115,23 @@ def mcmc(n,likelihood,zbias,mubias,OMi,H0i,wi,omstep,H0step,wstep,filein,fileout
         if r < 1 and MC > r:
             omlist.append(om_current)
             H0list.append(H0_current)
+            odelist.append(ode_current)
             wlist.append(w_current)
             accept = 0
         else:
             omlist.append(om_proposed)
             H0list.append(H0_proposed)
+            odelist.append(ode_proposed)
             wlist.append(w_proposed)
             accept = 1
             
         om_current = omlist[i+1]
         H0_current = H0list[i+1]
+        ode_current = odelist[i+1]
         w_current = wlist[i+1]
         accept_list.append(accept)
         
-        fout.write(str(om_current)+'\t'+str(H0_current)+'\t'+str(w_current)+'\n')
+        fout.write(str(om_current)+'\t'+str(H0_current)+'\t'+str(w_current)+'\t'+str(ode_current)+'\n')
         
         if status==True:
             inc100 = np.int64(i/(n-2)*100)
@@ -273,13 +308,9 @@ def mcmc_phot(n,block,burnin,thinning,likelihood,OMi,H0i,wi,bi,
             w_proposed =  rand.gauss(w_current,wstep)
         #Useful MCMC video (on Metropolis-Hastings Algorithm) here: https://youtu.be/yCv2N7wGDCw?si=IrWmM0jp3bfQmE-6
         MC1 = [rand.randint(0,lenz-1) for j in range(block)]
-        print('MC1',MC1)
         z_proposed = z_current.copy() #Length equal to number of datapoints
-        print('z_proposed',len(z_proposed),z_proposed)
         z_proposed[MC1] = [rand.gauss(z_current[MC1],(zstep*zdisp[MC1])**2) for j in range(block)] #Only change one of the redshifts at a time?
-        print('z_prop_MC1',z_proposed[MC1])
         b_proposed = rand.gauss(b_current,bstep)
-        print('b_proposed',b_proposed)
         #proposed position:
         log_like_proposed=likelihood(z_proposed,mu,sig_mu,OM_proposed,H0_proposed,w_proposed,z,zdisp,b_proposed)
         
@@ -311,7 +342,7 @@ def mcmc_phot(n,block,burnin,thinning,likelihood,OMi,H0i,wi,bi,
         w_current = wlist[i+1]
         
         if i >= burnin and i%thinning == 0:
-            fout.write(str(OM_current)+'\t'+str(H0_current)+'\t'+str(w_current)+'\t'+str(like))
+            fout.write(f'{OM_current}\t{H0_current}\t{w_current}\t{like}')
             fout.write('\n')
     
         if status==True:
