@@ -10,16 +10,20 @@ from scipy.integrate import quad
 from scipy import interpolate
 from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM
 from Lenstronomy_Cosmology import Background, LensCosmo
-
+from scipy.stats import multivariate_normal
 def r_SL(zL,zS,cosmo):
     LensCosmo_i = LensCosmo(z_lens=zL,z_source=zS,cosmo=cosmo)
     D_LS = LensCosmo_i.dds
     D_S = LensCosmo_i.ds
-    return D_LS.value/D_S.value
+    r_value = D_LS.value/D_S.value
+    if np.isnan(r_value).any():
+        print('Redshift input',zL,zS,zL<zS)
+        assert False
+    return r_value
 
 #Note: CANNOT just adapt the zBEAMS spectroscopic code to have larger errorbars as they assume z is known.
 #E.g. See Eqn 4.4 of BEAMS paper.
-def likelihood_SL(zL,zS,r_obs,sigma_r_obs,OM,Ode,H0,w,cosmo_type):
+def likelihood_SL(OM,Ode,H0,w,zL,zS,r_obs,sigma_r_obs,cosmo_type):
     '''
     If this code turns out to be quite slow, the previous likelihood function used interpolation.
     '''
@@ -32,7 +36,7 @@ def likelihood_SL(zL,zS,r_obs,sigma_r_obs,OM,Ode,H0,w,cosmo_type):
     likeli = -0.5*sum(chi2)
     return likeli
 
-def likelihood_spec_contam_SL(zL,zS,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,OM,Ode,H0,w,cosmo_type):
+def likelihood_spec_contam_SL(OM,Ode,H0,w,zL,zS,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,cosmo_type):
     '''
     If this code turns out to be quite slow, the previous likelihood function used interpolation.
     '''
@@ -55,11 +59,79 @@ def likelihood_spec_contam_SL(zL,zS,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,OM,O
     chi2_1 = ((r_obs-r_theory)/sigma_r_obs_1)**2
     chi2_3 = ((r_obs-r_theory)/sigma_r_obs_2)**2
     ###
-
+    #Adapted from Eqn 4.4 & 4.5 of zBEAMS:
     L1 = P_tau*((1/np.sqrt(2*np.pi*sigma_r_obs_1**2))*np.exp(-chi2_1/2))
     L3 = (1-P_tau)*((1/np.sqrt(2*np.pi*sigma_r_obs_2**2))*np.exp(-chi2_3/2))
     ###
     return np.sum(np.log(L1 + L3))
+
+def multivariate_normal_func(x,mean,cov):
+    try:
+        mvn = multivariate_normal(mean=mean,cov=cov).pdf(x)
+    except:
+        print('mean',mean,'cov',cov)
+        assert False
+    if np.isnan(mvn): print('mean',mean,'cov',cov); assert False 
+    return mvn
+
+def likelihood_phot_contam_SL(OM,Ode,H0,w, #Cosmological parameters to constrain
+                            mu_zL_g_L,mu_zS_g_L,mu_zL_g_NL,mu_zS_g_NL,#Mean values of p(z|tau) multi-variate gaussian (g_ = 'given')
+                            si_00_g_L,si_11_g_L, #Covariance values of p(z|Lens) - **Assuming diagonal**
+                            si_00_g_NL,si_11_g_NL, #Covariance values of p(z|Not-Lens) - **Assuming diagonal**
+                            zL,zS,#Redshifts to constrain
+                            zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,cosmo_type):
+    '''
+    NOTE: Am having to assume diagonal covariance matrix for P(z|Tau) unless I can find a quick way of vectorising scipy.stats.multivariate_normal
+    If this code turns out to be quite slow, the previous likelihood function used interpolation.
+    '''
+    if cosmo_type == 'FlatLambdaCDM': cosmo = FlatLambdaCDM(H0=H0, Om0=OM); assert OM+Ode==1; assert w==-1
+    if cosmo_type == 'LambdaCDM': cosmo = LambdaCDM(H0=H0, Om0=OM, Ode0=Ode); assert w==-1
+    if cosmo_type == 'FlatwCDM': cosmo = FlatwCDM(H0=H0, Om0=OM, w0=w); assert OM+Ode==1 #Assert Flat cosmology.
+    if cosmo_type == 'wCDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    r_theory = r_SL(zL,zS,cosmo)   
+
+    ###
+    '''
+    Gamma: What supernovae host galaxy is used
+    Tau: Is it a 1A supernovae or not.
+    sigmuo => Distance modulus, assuming it is a 1A
+    sigmuo2 => Distance modulus, assuming it is not a 1A => should be large (=> uninformative).
+    mu_theory1 => Theoretical distance modulus, based on redshifts of host-galaxy 1 (with prob P_gamma)
+    mu_theory2 => Theoretical distance modulus, based on redshifts of host-galaxy 2 (with prob 1-P_gamma)
+    For the Lensing case, I can get rid of P_gamma, as we don't have ambiguous host galaxies.
+    '''
+    #P(D|tau,z,r) (also added in redshift uncertainty below):
+    chi2_1 = ((r_obs-r_theory)/sigma_r_obs_1)**2 #if it is a lens
+    chi2_3 = ((r_obs-r_theory)/sigma_r_obs_2)**2 #if it is not a lens
+    #P(z|tau):
+    chi_z_g_L = list(map(multivariate_normal_func,np.array([zL,zS]).T, #MCMC proposals of zL and zS
+                         (np.array([[mu_zL_g_L]*len(zL),[mu_zS_g_L]*len(zL)]).T), #Mu of P(z|L)
+                                                    [np.diag([si_00_g_L,si_11_g_L])]*len(zL))) #Cov of P(z|NL), assume diagonal
+    chi_z_g_NL = list(map(multivariate_normal_func, np.array([zL,zS]).T, #MCMC proposals of zL and zS
+                         (np.array([[mu_zL_g_NL]*len(zL),[mu_zS_g_NL]*len(zL)]).T), #Mu of P(z|NL)
+                                                    [np.diag([si_00_g_NL,si_11_g_NL])]*len(zL))) #Cov of P(z|NL), assume diagonal
+    ###
+    #Adapted from Eqn 4.4 & 4.5 of zBEAMS:
+    L1 = P_tau*((1/np.sqrt(2*np.pi*sigma_r_obs_1**2))*np.exp(-chi2_1/2))
+    L3 = (1-P_tau)*((1/np.sqrt(2*np.pi*sigma_r_obs_2**2))*np.exp(-chi2_3/2))
+    ##
+    L4_L = (1/np.sqrt(2*np.pi*sigma_zL_obs**2))*np.exp(-0.5*((zL-zL_obs)/sigma_zL_obs)**2)
+    L4_S = (1/np.sqrt(2*np.pi*sigma_zS_obs**2))*np.exp(-0.5*((zS-zS_obs)/sigma_zS_obs)**2)
+    ##
+    L5 = chi_z_g_L
+    L6 = chi_z_g_NL
+    ###
+    likelihood_i = (L1*chi_z_g_L + L3*chi_z_g_NL)*L4_L*L4_S
+    if (likelihood_i==0).any():
+        print('Zero likelihood')
+        '''
+        print('L1',L1,'P_tau',P_tau,'sigma_r_obs_1',sigma_r_obs_1,'chi2_1',chi2_1,
+              'factor',((1/np.sqrt(2*np.pi*sigma_r_obs_1**2)),'exp',np.exp(-chi2_1/2)))
+        print('L3',L3,'1-P_tau',1-P_tau,'sigma_r_obs_2',sigma_r_obs_2,'chi2_3',chi2_3,
+              'factor',((1/np.sqrt(2*np.pi*sigma_r_obs_2**2)),'exp',np.exp(-chi2_3/2)))
+        assert False'''
+    L_tot = np.sum(np.log(likelihood_i))
+    return L_tot 
 
 def mu_w(z,OM,H0,w):
     def H(z,OM,H0,w):
@@ -103,6 +175,9 @@ def likelihood_phot(z,muo,sigmuo,OM,H0,w,zo,sigzo,b):
         return mu_int
     
     mu_theory = mu_interp(z,OM,H0,w)
+    '''
+    Why do we not care about the 1/sqrt(2pi*sigma^2) here?
+    '''
     chi2 = ((muo-mu_theory)/sigmuo)**2
     chi3 = ((z-zo)/sigzo)**2
     chi4 = np.log(z) - b*z

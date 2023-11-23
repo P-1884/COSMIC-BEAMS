@@ -9,9 +9,76 @@ Created on Sun May  7 22:52:26 2017
 import numpy as np
 import random as rand
 import sys
+import emcee
+import time
+from multiprocessing import Pool
 
-def mcmc_SL(n,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wstep,db_in,fileout,status,cosmo_type,
-            contaminated=True):
+#This function needs to be global (i.e. not defined within a function), so the multiprocessing works:
+def likelihood_with_bounds(MCMC_parameters, #Cosmology to find. NOTE If change the order of these, need to change the order in which 
+                            #parameters in cur_state are called. 
+        #MCMC_parameters order:
+        #[0]:OM
+        #[1]:OD
+        #[2]:H0
+        #[3]:W0
+        #[4,5,6,7]: mu_zX_g_Y
+        #[8,9,10,11]: si_X_g_Y  #Covariance values of p(z|Lens) - **Assuming diagonal**
+        #[12:12+len(r_obs)]: ZL_MCMC
+        #[12+len(r_obs):]: ZS_MCMC
+        ZL_OBS=None,ZS_OBS=None,SIGMA_ZL_OBS=None,SIGMA_ZS_OBS=None,
+        R_OBS=None,SIGMA_R_OBS=None, #Inputs
+        likelihood=None, # Log-likelihood function, without any bounds
+        SIGMA_R_OBS_2=None,P_TAU=None,# Optional Inputs if Contaminated=True
+        COSMO_TYPE=None,FLAT_BOOL=None,COMPLEX_EOS_BOOL=None,CONTAMINATED=None,PHOTOMETRIC=None):
+    #OM,OD,H0,W0
+    if MCMC_parameters[0]<0 or MCMC_parameters[0]>1: print('Outside OM bound'); return -np.inf #OM
+    if MCMC_parameters[1]<0 or MCMC_parameters[1]>1: print('Outside OD bound'); return -np.inf #OD
+    if MCMC_parameters[2]>= 200 or MCMC_parameters[2] <= 10: print('Outside H0 bound');return -np.inf #H0
+    if MCMC_parameters[3]<=-6 or MCMC_parameters[3]>4: print('Outside W0 bound');return -np.inf #W0
+    '''
+    Note, if the MCMC is going very slowly, there may be a way to speed it up in the flat and or w=-1 cases by removing
+    them as arguments (rather than setting the likelihood=-np.inf if they are wrong):
+    '''
+    if FLAT_BOOL: 
+        if MCMC_parameters[0]+MCMC_parameters[1]!=1: return -np.inf #Make sure Omega_K=0
+    if not COMPLEX_EOS_BOOL:
+        if MCMC_parameters[2]!=-1: return -np.inf #Make sure W0 is -1.
+    if not CONTAMINATED:return likelihood(MCMC_parameters[0],MCMC_parameters[1],
+                                            MCMC_parameters[2],MCMC_parameters[3],
+                                            ZL_OBS,ZS_OBS,R_OBS,SIGMA_R_OBS,COSMO_TYPE)
+    if CONTAMINATED and not PHOTOMETRIC: return likelihood(MCMC_parameters[0],MCMC_parameters[1],
+                                        MCMC_parameters[2],MCMC_parameters[3],
+                                        ZL_OBS,ZS_OBS,R_OBS,SIGMA_R_OBS,SIGMA_R_OBS_2,P_TAU,COSMO_TYPE)
+    if PHOTOMETRIC:
+        if (MCMC_parameters[12:12+len(ZL_OBS)]>MCMC_parameters[12+len(ZL_OBS):]).any():
+            print('Redshifts unphysical')
+            return -np.inf #Assert zL<zS
+        if (MCMC_parameters[12:12+len(ZL_OBS)]<0).any() or (MCMC_parameters[12+len(ZL_OBS):]<0).any():
+            print('Redshifts below zero')
+            return -np.inf #Assert zL>0 and zS>0
+        if (MCMC_parameters[4:12]<0).any():
+            print('Redshift population priors below zero')
+            return -np.inf #Assert mu and sigma are >0
+        if (MCMC_parameters[8:12]>10).any():
+            print('Redshift sigmas too extreme')
+            return -np.inf #Assert redshift sigmas are <10.
+    if CONTAMINATED and PHOTOMETRIC: return likelihood(
+            MCMC_parameters[0],MCMC_parameters[1], #Cosmological parameters to constrain
+            MCMC_parameters[2],MCMC_parameters[3], #Cosmological parameters to constrain
+            #
+            MCMC_parameters[4],MCMC_parameters[5],MCMC_parameters[6],MCMC_parameters[7],#Mean values of p(z|tau) multi-variate gaussian (g_ = 'given')
+            MCMC_parameters[8],MCMC_parameters[9],MCMC_parameters[10],MCMC_parameters[11], 
+            #
+            MCMC_parameters[12:12+len(ZL_OBS)],MCMC_parameters[12+len(ZL_OBS):],# Redshifts to constrain (Note: these aren't Z_OBS)
+            #
+            ZL_OBS,ZS_OBS,SIGMA_ZL_OBS,SIGMA_ZS_OBS,R_OBS,SIGMA_R_OBS,SIGMA_R_OBS_2,P_TAU,COSMO_TYPE)
+    print('RETURNING NOTHING')
+
+def mcmc_SL(n,n_walkers,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wstep,db_in,fileout,status,cosmo_type,
+            contaminated=None,photometric=None):
+    assert contaminated is not None
+    assert photometric is not None
+    print(f'Assuming the sample is {"not "*(~contaminated)}contaminated, and that the redshifts are {"not "*(~photometric)}photometric')
     assert cosmo_type in ['FlatLambdaCDM','LambdaCDM','FlatwCDM','wCDM']
     if cosmo_type in ['FlatLambdaCDM','FlatwCDM']: Flat_bool=True; print('Assuming a Flat Cosmology')
     else: Flat_bool=False; print('Allowing the cosmology to have non-zero curvature')
@@ -32,15 +99,70 @@ def mcmc_SL(n,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wst
         columnmu = 2
     
     zL_obs=db_in['zL_obs'].to_numpy();zS_obs=db_in['zS_obs'].to_numpy()
-    if not contaminated: r_obs=db_in['r_obs'].to_numpy()
-    if contaminated: r_obs=db_in['r_obs_contam'].to_numpy()
+    #if not contaminated: r_obs=db_in['r_obs'].to_numpy()
+    #if contaminated: r_obs=db_in['r_obs_contam'].to_numpy()
+    '''Will always use the contaminated inputs for r_obs (they can be set to the true values if not contaminated), so can test the effect
+    of accounting for the bias or not:'''
+    r_obs = db_in['r_obs_contam'].to_numpy()
     sigma_r_obs=db_in['sigma_r_obs'].to_numpy() #Making these up!!!
+    sigma_r_obs_2 = 1000*np.max(sigma_r_obs) #Making this a large number so contaminants are effectively ignored
+    if photometric:
+        sigma_zL_obs = db_in['sigma_zL_obs'].to_numpy()
+        sigma_zS_obs = db_in['sigma_zS_obs'].to_numpy()
     '''
     Not sure what sigma_r_obs_0 should be if the object is not a lens?
     '''
     if contaminated: P_tau = db_in['P_tau'].to_numpy()
     rand.seed(7)
-    
+
+    Initialisation_dict = {'H0':{'L':50,'H':100},'OM':{'L':0,'H':1},'OD':{'L':0,'H':1},'W0':{'L':-6,'H':4},
+                           'mu_zL_g_L':{'L':0,'H':0.5},'mu_zS_g_L':{'L':0.5,'H':1},
+                           'si_00_g_L':{'L':0.1,'H':2},'si_11_g_L':{'L':0.1,'H':2},
+                           'mu_zL_g_NL':{'L':0,'H':5},'mu_zS_g_NL':{'L':0,'H':5},
+                           'si_00_g_NL':{'L':0.1,'H':5},'si_11_g_NL':{'L':0.1,'H':5},
+                           'zL':{'L':0.5,'H':0.5},'zS':{'L':1,'H':1}}
+    if not photometric: cur_state = np.concatenate([np.random.uniform(low=Initialisation_dict[elem]['L'],
+                                                                      high=Initialisation_dict[elem]['H'],
+                                size=(n_walkers,1)) for elem in ['OM','OD','H0','W0']],axis=1)
+    if photometric: 
+        cur_state = np.concatenate([np.random.uniform(low=Initialisation_dict[elem]['L'],
+                                                      high=Initialisation_dict[elem]['H'],
+                                size=(n_walkers,1)) for elem in ['OM','OD','H0','W0'] +\
+                                    ['mu_zL_g_L','mu_zS_g_L','mu_zL_g_NL','mu_zS_g_NL'] +\
+                                    ['si_00_g_L','si_11_g_L','si_00_g_NL','si_00_g_NL']],axis=1)
+        cur_state = np.concatenate([cur_state,
+                                    np.repeat([zL_obs.tolist()],n_walkers,axis=0), #Initialising at the measured redshift
+                                    np.repeat([zS_obs.tolist()],n_walkers,axis=0)],axis=1) #Initialising at the measured redshift
+
+    if contaminated:
+        sigma_r_obs_2 = sigma_r_obs_2
+        P_tau = P_tau
+    else: 
+        sigma_r_obs_2 = None
+        P_tau = None
+
+    with Pool() as pool:
+        if not photometric: sampler = emcee.EnsembleSampler(n_walkers, ndim=4, log_prob_fn = likelihood_with_bounds,
+                                        kwargs = {'ZL_OBS':zL_obs,'ZS_OBS':zS_obs,'R_OBS':r_obs,'SIGMA_R_OBS':sigma_r_obs,
+                                                'likelihood':likelihood,
+                                                'SIGMA_R_OBS_2':sigma_r_obs_2,'P_TAU':P_tau,
+                                                'COSMO_TYPE':cosmo_type,'FLAT_BOOL':Flat_bool,'COMPLEX_EOS_BOOL':Complex_EoS_bool,
+                                                'CONTAMINATED':contaminated,'PHOTOMETRIC':photometric},pool=pool)#,backend=backend)
+        if photometric: sampler = emcee.EnsembleSampler(n_walkers, 
+                                        ndim=12+2*len(r_obs),#ndim is 4 cosmo, 4 means, 4 diagonal covariances and all lens/source redshifts
+                                    log_prob_fn = likelihood_with_bounds,
+                                    kwargs = {
+                                            'ZL_OBS':zL_obs,'ZS_OBS':zS_obs,'SIGMA_ZL_OBS':sigma_zL_obs,'SIGMA_ZS_OBS':sigma_zS_obs,
+                                            'R_OBS':r_obs,'SIGMA_R_OBS':sigma_r_obs,
+                                            'likelihood':likelihood,
+                                            'SIGMA_R_OBS_2':sigma_r_obs_2,'P_TAU':P_tau,
+                                            'COSMO_TYPE':cosmo_type,'FLAT_BOOL':Flat_bool,'COMPLEX_EOS_BOOL':Complex_EoS_bool,
+                                            'CONTAMINATED':contaminated,'PHOTOMETRIC':photometric},pool=pool)#,backend=backend)
+        _ = sampler.run_mcmc(cur_state,n,progress=True,skip_initial_state_check=True)
+    save_time = time.time()
+    if not photometric: np.save(f'{fileout}_mcmc_chains_{save_time}.npy',sampler.chain)
+    else: np.save(f'{fileout}_mcmc_chains_{save_time}.npy',sampler.chain[:,:,0:-2*int(len(r_obs))]) #Not saving the redshift values to save space
+    return 
     ###############MCMC code (bias)###############
     
     omlist = [] #create empty list
@@ -62,7 +184,6 @@ def mcmc_SL(n,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wst
     odelist.append(ode_current)
     wlist.append(w_current)
     sig_tau = 0.2 #Where this from???
-    sigma_r_obs_2 = 1000*np.max(sigma_r_obs) #Making this a large number so contaminants are effectively ignored
     accept = 0
     log_like_proposed = 0
     accept_list = []
@@ -74,8 +195,8 @@ def mcmc_SL(n,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wst
     for i in range(0,n-1):
         #current position:
         if i == 0: 
-            if not contaminated: log_like_current = likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,om_current,ode_current,H0_current,w_current,cosmo_type)
-            if contaminated: log_like_current =  likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2,P_tau,om_current,ode_current,H0_current,w_current,cosmo_type)
+            if not contaminated: log_like_current = likelihood(om_current,ode_current,H0_current,w_current,zL_obs,zS_obs,r_obs,sigma_r_obs,cosmo_type)
+            if contaminated: log_like_current =  likelihood(om_current,ode_current,H0_current,w_current,zL_obs,zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2,P_tau,cosmo_type)
         elif accept == 1:
             log_like_current = log_like_proposed
         
@@ -105,8 +226,8 @@ def mcmc_SL(n,likelihood,zbias,mubias,OMi,Odei,H0i,wi,omstep,ode_step,H0step,wst
             w_proposed=-1
             
         #proposed position:
-        if not contaminated: log_like_proposed = likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,om_proposed,ode_proposed,H0_proposed,w_proposed,cosmo_type)
-        if contaminated: log_like_proposed = likelihood(zL_obs,zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2,P_tau,om_proposed,ode_proposed,H0_proposed,w_proposed,cosmo_type)
+        if not contaminated: log_like_proposed = likelihood(om_proposed,ode_proposed,H0_proposed,w_proposed,zL_obs,zS_obs,r_obs,sigma_r_obs,cosmo_type)
+        if contaminated: log_like_proposed = likelihood(om_proposed,ode_proposed,H0_proposed,w_proposed,zL_obs,zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2,P_tau,cosmo_type)
         #decision:
         r = np.exp(log_like_proposed - log_like_current)
         
