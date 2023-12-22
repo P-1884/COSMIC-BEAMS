@@ -140,6 +140,7 @@ def r_SL_check(zL,zS,cosmo,j_cosmo,plot=False):
         pl.show()
     
 def cosmo_check():
+    print('Running Cosmo Check')
     print("NOTE: This cosmology still needs fixing - doesn't work for large values of Ode, but need to check if these are physical values anyway")
     H0_sim = jnp.array([50,60,70])[...,jnp.newaxis]
     Om_sim = jnp.array([0.2,0.3,0.4])[...,jnp.newaxis]
