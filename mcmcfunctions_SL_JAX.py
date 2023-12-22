@@ -126,7 +126,7 @@ def run_MCMC(photometric,contaminated,cosmo_type,zL_obs,zS_obs,r_obs,sigma_r_obs
                 P_tau=P_tau,
                 cosmo_type=cosmo_type,
                 photometric=photometric,
-                contaminated=contaminated
+                contaminated=contaminated,
                 H0=H0)
     return sampler_0
 
