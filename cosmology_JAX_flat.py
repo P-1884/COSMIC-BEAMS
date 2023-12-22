@@ -5,7 +5,7 @@ sys.path.append('/mnt/zfsusers/hollowayp/zBEAMS')
 from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM,w0waCDM
 from Lenstronomy_Cosmology import Background, LensCosmo
 from jax_cosmo import Cosmology
-from jax_cosmo import background
+from jax_cosmo import background_flat as background
 import matplotlib.pyplot as pl
 import jax.numpy as jnp
 import jax_cosmo as jc
@@ -51,7 +51,7 @@ def j_D_LS(zL,zS,j_cosmo):
         c3 = (dH/sqrt_Ok)#.T
 #        return a3*b3*c3
     #Note: k takes opposite sign to Omega_k
-    j_D_LS_ii = jnp.where((j_cosmo.k==-1).T,a3*b3*c3,jnp.where((j_cosmo.k==1).T,a1*b1*c1,a2*b2))
+    j_D_LS_ii = a2*b2
     return j_D_LS_ii
 #    return (a1*b1*c1)*(j_cosmo.Omega_k<0).T+(a2*b2)*(j_cosmo.Omega_k==0).T+(a3*b3*c3)*(j_cosmo.Omega_k>0).T
 
@@ -143,19 +143,19 @@ def cosmo_check():
     print("NOTE: This cosmology still needs fixing - doesn't work for large values of Ode, but need to check if these are physical values anyway")
     H0_sim = jnp.array([50,60,70])[...,jnp.newaxis]
     Om_sim = jnp.array([0.2,0.3,0.4])[...,jnp.newaxis]
-    Ok_sim = jnp.array([-0.5,0.0,0.5])[...,jnp.newaxis]
+    Ok_sim = jnp.array([0,0.0,0])[...,jnp.newaxis]
     Ode_sim = 1-(Om_sim+Ok_sim) #NOTE: Ode can't be negative (O_k can be), so don't be surprised if it bugs if it is!
     assert jnp.shape(H0_sim)==jnp.shape(Ode_sim)
     #
     H0_com = jnp.array([50,60,70])[...,jnp.newaxis]
     Om_com = jnp.array([0.2,0.3,0.4])[...,jnp.newaxis]
-    Ok_com = jnp.array([-0.5,0.0,0.5])[...,jnp.newaxis]
+    Ok_com = jnp.array([0.0,0.0,0.0])[...,jnp.newaxis]
     Ode_com = 1-(Om_com+Ok_com) #NOTE: Ode can't be negative (O_k can be), so don't be surprised if it bugs if it is!
     w0_com = jnp.array([-0.5,-0.5,1.5])[...,jnp.newaxis]
     #
     H0_vcom = jnp.array([50,60,70])[...,jnp.newaxis]
     Om_vcom = jnp.array([0.2,0.3,0.1])[...,jnp.newaxis]
-    Ok_vcom = jnp.array([-0.9,0.0,0.9])[...,jnp.newaxis]
+    Ok_vcom = jnp.array([0.0,0.0,0.0])[...,jnp.newaxis]
     Ode_vcom = 1-(Om_vcom+Ok_vcom) #NOTE: Ode can't be negative (O_k can be), so don't be surprised if it bugs if it is!
     w0_vcom = jnp.array([-0.5,-0.5,1.5])[...,jnp.newaxis]
     wa_vcom = jnp.array([-0.9,0.1,0.9])[...,jnp.newaxis]
