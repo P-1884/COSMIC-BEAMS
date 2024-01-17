@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jan 26 12:06:21 2017
-
-@author: ethan
 """
 
 import numpy as np
 from scipy.integrate import quad
 from scipy import interpolate
-from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM
+from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM,w0waCDM,Flatw0waCDM
 from Lenstronomy_Cosmology import Background, LensCosmo
 from scipy.stats import multivariate_normal
 def r_SL(zL,zS,cosmo):
@@ -23,27 +20,29 @@ def r_SL(zL,zS,cosmo):
 
 #Note: CANNOT just adapt the zBEAMS spectroscopic code to have larger errorbars as they assume z is known.
 #E.g. See Eqn 4.4 of BEAMS paper.
-def likelihood_SL(OM,Ode,H0,w,zL,zS,r_obs,sigma_r_obs,cosmo_type):
+def likelihood_SL(OM,Ode,H0,w,wa,zL,zS,r_obs,sigma_r_obs,cosmo_type):
     '''
     If this code turns out to be quite slow, the previous likelihood function used interpolation.
     '''
     if cosmo_type == 'FlatLambdaCDM': cosmo = FlatLambdaCDM(H0=H0, Om0=OM)#; assert OM+Ode==1; assert w==-1
     if cosmo_type == 'LambdaCDM': cosmo = LambdaCDM(H0=H0, Om0=OM, Ode0=Ode)#; assert w==-1
-    if cosmo_type == 'FlatwCDM': cosmo = FlatwCDM(H0=H0, Om0=OM, w0=w)#; assert OM+Ode==1 #Assert Flat cosmology.
-    if cosmo_type == 'wCDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type == 'FlatwCDM': cosmo = Flatw0waCDM(H0=H0, Om0=OM, w0=w, wa=wa)#; assert OM+Ode==1 #Assert Flat cosmology.
+    if cosmo_type == 'w0CDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type =='wCDM': cosmo = w0waCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w, wa=wa)
     r_theory = r_SL(zL,zS,cosmo)   
     chi2 = ((r_obs-r_theory)/sigma_r_obs)**2
     likeli = -0.5*sum(chi2)
     return likeli
 
-def likelihood_spec_contam_SL(OM,Ode,H0,w,zL,zS,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,cosmo_type):
+def likelihood_spec_contam_SL(OM,Ode,H0,w,wa,zL,zS,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,cosmo_type):
     '''
     If this code turns out to be quite slow, the previous likelihood function used interpolation.
     '''
     if cosmo_type == 'FlatLambdaCDM': cosmo = FlatLambdaCDM(H0=H0, Om0=OM)#; assert OM+Ode==1; assert w==-1
     if cosmo_type == 'LambdaCDM': cosmo = LambdaCDM(H0=H0, Om0=OM, Ode0=Ode)#; assert w==-1
-    if cosmo_type == 'FlatwCDM': cosmo = FlatwCDM(H0=H0, Om0=OM, w0=w)#; assert OM+Ode==1 #Assert Flat cosmology.
-    if cosmo_type == 'wCDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type == 'FlatwCDM': cosmo = Flatw0waCDM(H0=H0, Om0=OM, w0=w, wa=wa)#; assert OM+Ode==1 #Assert Flat cosmology.
+    if cosmo_type == 'w0CDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type =='wCDM': cosmo = w0waCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w, wa=wa)
     r_theory = r_SL(zL,zS,cosmo)   
 
     ###
@@ -74,7 +73,7 @@ def multivariate_normal_func(x,mean,cov):
     if np.isnan(mvn): print('mean',mean,'cov',cov); assert False 
     return mvn
 
-def likelihood_phot_contam_SL(OM,Ode,H0,w, #Cosmological parameters to constrain
+def likelihood_phot_contam_SL(OM,Ode,H0,w,wa, #Cosmological parameters to constrain
                     mu_zL_g_L,mu_zS_g_L,mu_zL_g_NL,mu_zS_g_NL,#Mean values of p(z|tau) multi-variate gaussian (g_ = 'given')
                     si_00_g_L,si_11_g_L, #Covariance values of p(z|Lens) - **Assuming diagonal**
                     si_00_g_NL,si_11_g_NL, #Covariance values of p(z|Not-Lens) - **Assuming diagonal**
@@ -86,8 +85,9 @@ def likelihood_phot_contam_SL(OM,Ode,H0,w, #Cosmological parameters to constrain
     '''
     if cosmo_type == 'FlatLambdaCDM': cosmo = FlatLambdaCDM(H0=H0, Om0=OM)#; assert OM+Ode==1; assert w==-1
     if cosmo_type == 'LambdaCDM': cosmo = LambdaCDM(H0=H0, Om0=OM, Ode0=Ode)#; assert w==-1
-    if cosmo_type == 'FlatwCDM': cosmo = FlatwCDM(H0=H0, Om0=OM, w0=w)#; assert OM+Ode==1 #Assert Flat cosmology.
-    if cosmo_type == 'wCDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type == 'FlatwCDM': cosmo = Flatw0waCDM(H0=H0, Om0=OM, w0=w, wa=wa)#; assert OM+Ode==1 #Assert Flat cosmology.
+    if cosmo_type == 'w0CDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type =='wCDM': cosmo = w0waCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w, wa=wa)
     r_theory = r_SL(zL,zS,cosmo)   
 
     ###
@@ -134,7 +134,7 @@ def likelihood_phot_contam_SL(OM,Ode,H0,w, #Cosmological parameters to constrain
     return L_tot 
 
 
-def likelihood_phot_SL(OM,Ode,H0,w, #Cosmological parameters to constrain
+def likelihood_phot_SL(OM,Ode,H0,w,wa, #Cosmological parameters to constrain
                         mu_zL_g_L,mu_zS_g_L,#Mean values of p(z|tau) multi-variate gaussian (g_ = 'given')
                         si_00_g_L,si_11_g_L, #Covariance values of p(z|Lens) - **Assuming diagonal**
                         zL,zS,#Redshifts to constrain
@@ -145,10 +145,11 @@ def likelihood_phot_SL(OM,Ode,H0,w, #Cosmological parameters to constrain
     '''
     if cosmo_type == 'FlatLambdaCDM': cosmo = FlatLambdaCDM(H0=H0, Om0=OM)#; assert OM+Ode==1; assert w==-1
     if cosmo_type == 'LambdaCDM': cosmo = LambdaCDM(H0=H0, Om0=OM, Ode0=Ode)#; assert w==-1
-    if cosmo_type == 'FlatwCDM': cosmo = FlatwCDM(H0=H0, Om0=OM, w0=w)#; assert OM+Ode==1 #Assert Flat cosmology.
-    if cosmo_type == 'wCDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type == 'FlatwCDM': cosmo = Flatw0waCDM(H0=H0, Om0=OM, w0=w, wa=wa)#; assert OM+Ode==1 #Assert Flat cosmology.
+    if cosmo_type == 'w0CDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
+    if cosmo_type =='wCDM': cosmo = w0waCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w, wa=wa)
     r_theory = r_SL(zL,zS,cosmo)   
-
+    print('r_theory',r_theory)
     ###
     '''
     Gamma: What supernovae host galaxy is used
@@ -204,17 +205,21 @@ def mu_w(z,OM,H0,w):
 
 def likelihood_phot(z,muo,sigmuo,OM,H0,w,zo,sigzo,b):
     def mu_interp(z,OM,H0,w):
+        assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
         def H(z,OM,H0,w):
+            assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
             if w==-1:
                 return H0*np.sqrt(OM*(1+z)**3+(1-OM))
             else:
                 return H0*np.sqrt(OM*(1+z)**3+(1-OM)*(1+z)**(3*(w+1)))
                 
         def dL(z,OM,H0,w):
+            assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
             c=2.99792e5
             return (1+z)*quad(lambda x:c/H(x,OM,H0,w),0,z)[0]
             
         def mu_w(z,OM,H0,w):
+            assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
             return 5*np.log10(dL(z,OM,H0,w))+25
         #The purpose of np.vectorize is to transform functions which are not numpy-aware (e.g. take floats
         #as input and return floats as output) into functions that can operate on (and return) numpy arrays.        
@@ -242,16 +247,19 @@ def likelihood_phot(z,muo,sigmuo,OM,H0,w,zo,sigzo,b):
 def likelihood_spec(z,z2,muo,sigmuo,sigmuo2,P_gamma,P_tau,offset,OM,H0,w):
     def mu_interp(z,OM,H0,w):
         def H(z,OM,H0,w):
+            assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
             if w==-1:
                 return H0*np.sqrt(OM*(1+z)**3+(1-OM))
             else:
                 return H0*np.sqrt(OM*(1+z)**3+(1-OM)*(1+z)**(3*(w+1)))
                 
         def dL(z,OM,H0,w):
+            assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
             c=2.99792e5
             return (1+z)*quad(lambda x:c/H(x,OM,H0,w),0,z)[0]
             
         def mu_w(z,OM,H0,w):
+            assert False #Need to fix this to allow for redshift-evolving dark-matter EoS
             return 5*np.log10(dL(z,OM,H0,w))+25
                 
         mu_w_vectorized = np.vectorize(mu_w)

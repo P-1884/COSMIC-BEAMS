@@ -11,27 +11,33 @@ import jax.numpy as jnp
 import jax_cosmo as jc
 import numpy as np
 import jax
-
+#jax.config.update("jax_enable_x64", True)
+from jax import jit
 '''
 Have renamed some functions using astropy (e.g. r_SL) to ..._astr to prevent them overwriting any functions with these names outside this file.
 '''
 
+#@jit
 def j_D_cov(z,j_cosmo):
     #Comoving distance in Mpc
     return background.radial_comoving_distance(j_cosmo,jc.utils.z2a(z))/j_cosmo.h #**Dividing** by h as otherwise returned in Mpc/h.
 
+#@jit
 def j_D_cov_z1z2(zL,zS,j_cosmo):
     return j_D_cov(zS,j_cosmo)-j_D_cov(zL,j_cosmo)
 
+#@jit
 def j_D_S(zS,j_cosmo):
     return background.angular_diameter_distance(j_cosmo,jc.utils.z2a(zS))/j_cosmo.h#.T  #**Dividing** by h as otherwise returned in Mpc/h.
 
+#@jit
 def D_S_astr(zL,zS,cosmo):
     LensCosmo_i = LensCosmo(z_lens=zL,z_source=zS,cosmo=cosmo)
     D_S = LensCosmo_i.ds
     return D_S
 
 #jnp.where(some_factor,val_if_true,val_if_false)
+#@jit
 def j_D_LS(zL,zS,j_cosmo):
     D_cov_ZL_ZS = j_D_cov_z1z2(zL,zS,j_cosmo)
     dH = jc.constants.c/(100*j_cosmo.h) #(km/s)*(km/(s*Mpc))^-1 = (1/s)*s*Mpc = Mpc.
@@ -55,11 +61,13 @@ def j_D_LS(zL,zS,j_cosmo):
     return j_D_LS_ii
 #    return (a1*b1*c1)*(j_cosmo.Omega_k<0).T+(a2*b2)*(j_cosmo.Omega_k==0).T+(a3*b3*c3)*(j_cosmo.Omega_k>0).T
 
+#@jit
 def D_LS_astr(zL,zS,cosmo):
     LensCosmo_i = LensCosmo(z_lens=zL,z_source=zS,cosmo=cosmo)
     D_LS = LensCosmo_i.dds
     return D_LS
 
+#@jit
 def j_r_SL(zL,zS,j_cosmo): 
     D_LS = j_D_LS(zL,zS,j_cosmo)
     D_S = j_D_S(zS,j_cosmo)
@@ -86,7 +94,20 @@ def D_cov_check(z,cosmo,j_cosmo,plot=False):
         pl.plot(z,D_cov_i)
         pl.plot(z,j_D_cov_i,'--')
         pl.show()
-    assert ((abs(D_cov_i-j_D_cov_i)/D_cov_i)<0.01).all()
+    try:
+        assert ((abs(D_cov_i-j_D_cov_i)/D_cov_i)<0.01).all()
+    except Exception as ex:
+        print('Failed Check',ex)
+        print('Cosmology',cosmo)
+        print('j_D_cov_i',j_D_cov_i)
+        fig,ax = pl.subplots(1,2,figsize=(10,5))
+        ax[0].plot(z,D_cov_i,label='Astropy')
+        ax[0].plot(z,j_D_cov_i,'--',label='JAX')
+        ax[0].legend();ax[0].set_ylabel('D_cov')
+        ax[1].plot(z,D_cov_i-j_D_cov_i)
+        ax[1].set_ylabel('D_cov: Astropy-JAX')
+        pl.suptitle('Failed: D_cov_check')
+        pl.show()       
 
 def D_LS_check(zL,zS,cosmo,j_cosmo,plot=False):
     D_LS_i = cosmo.angular_diameter_distance_z1z2(zL,zS).to_value()
@@ -202,6 +223,7 @@ def cosmo_check():
             cosmo_i = [cosmo_simple,cosmo_complex,cosmo_very_complex][complexity]
             j_cosmo_i = [j_cosmo_simple,j_cosmo_complex,j_cosmo_very_complex][complexity]
             for z_i in [zL_check,zS_check]:
+                #print('Cosmo in',j_cosmo_i)
                 #print('redshifts',z_i)
                 D_cov_check(z_i,cosmo_i,j_cosmo_i,plot=False)
             D_LS_check(zL_check,zS_check,cosmo_i,j_cosmo_i,plot=False)

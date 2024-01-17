@@ -4,7 +4,7 @@ from lenstronomy.Cosmo.cosmo_interp import CosmoInterp
 from lenstronomy.Cosmo.background import Background
 from lenstronomy.Cosmo.nfw_param import NFWParam
 import lenstronomy.Util.constants as const
-import matplotlib.pyplot as pl
+#import matplotlib.pyplot as pl
 from scipy.stats import norm
 from tqdm import tqdm
 import pandas as pd
