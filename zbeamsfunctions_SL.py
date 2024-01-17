@@ -106,10 +106,10 @@ def likelihood_phot_contam_SL(OM,Ode,H0,w,wa, #Cosmological parameters to constr
     #P(z|tau):
     chi_z_g_L = list(map(multivariate_normal_func,np.array([zL,zS]).T, #MCMC proposals of zL and zS
                          (np.array([[mu_zL_g_L]*len(zL),[mu_zS_g_L]*len(zL)]).T), #Mu of P(z|L)
-                                                    [np.diag([si_00_g_L,si_11_g_L])]*len(zL))) #Cov of P(z|NL), assume diagonal
+                                                    [np.diag([si_00_g_L**2,si_11_g_L**2])]*len(zL))) #Cov of P(z|NL), assume diagonal
     chi_z_g_NL = list(map(multivariate_normal_func, np.array([zL,zS]).T, #MCMC proposals of zL and zS
                          (np.array([[mu_zL_g_NL]*len(zL),[mu_zS_g_NL]*len(zL)]).T), #Mu of P(z|NL)
-                                                    [np.diag([si_00_g_NL,si_11_g_NL])]*len(zL))) #Cov of P(z|NL), assume diagonal
+                                                    [np.diag([si_00_g_NL**2,si_11_g_NL**2])]*len(zL))) #Cov of P(z|NL), assume diagonal
     ###
     #Adapted from Eqn 4.4 & 4.5 of zBEAMS:
     L1 = P_tau*((1/np.sqrt(2*np.pi*sigma_r_obs_1**2))*np.exp(-chi2_1/2))
@@ -166,7 +166,7 @@ def likelihood_phot_SL(OM,Ode,H0,w,wa, #Cosmological parameters to constrain
     chi_z_g_L = list(map(multivariate_normal_func,np.array([zL,zS]).T, #MCMC proposals of zL and zS
                           np.array([[mu_zL_g_L]*len(zL),
                                     [mu_zS_g_L]*len(zL)]).T, #Mu of P(z|L)
-                         [np.diag([si_00_g_L,si_11_g_L])]*len(zL))) #Cov of P(z|L), assume diagonal
+                         [np.diag([si_00_g_L**2,si_11_g_L**2])]*len(zL))) #Cov of P(z|L), assume diagonal
     ###
     #Adapted from Eqn 4.4 & 4.5 of zBEAMS:
     L1 = ((1/np.sqrt(2*np.pi*sigma_r_obs_1**2))*np.exp(-chi2_1/2))
