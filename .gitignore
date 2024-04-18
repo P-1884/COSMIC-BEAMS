@@ -4,4 +4,8 @@
 .ipynb_checkpoints/
 __pycache__/**
 chains/*
-./cmd_outputs/*
+/cmd_outputs/*
+/databases/*
+*.out
+zBEAMS_plots/*
+*.sh
