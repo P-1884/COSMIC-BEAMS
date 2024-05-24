@@ -2,9 +2,11 @@
 import sys
 argv = sys.argv
 print('ARGS',argv)
-
+#import os
+#os.environ["JAX_ENABLE_X64"] = 'True'
 import numpyro
 import jax
+import time
 from jax import local_device_count,default_backend,devices
 # if default_backend()=='cpu': => Doesn't seem to recognise more than one device - always just prints jax.devices=1.
 #     numpyro.util.set_host_device_count(4)
@@ -36,7 +38,7 @@ import jax_cosmo as jc
 from tqdm import tqdm
 import scipy.sparse
 import pandas as pd
-import arviz as az
+#import arviz as az
 import numpy as np
 import importlib
 import corner
@@ -75,14 +77,44 @@ try:
 except Exception as ex2:
     print('EXCEPTION regarding cov_redshift',ex2)
     cov_redshift = False
-
+try:
+    batch_bool = eval(argv[10])
+except Exception as ex3:
+    print('EXCEPTION regarding batch_bool',ex3)
+    batch_bool = True
+try:
+    wa_const = eval(argv[11])
+except Exception as ex4:
+    print('EXCEPTION regarding wa_const',ex4)
+    wa_const = False #When in doubt, allow wa to vary (along with w0, if infering wCDM cosmology)
+try:
+    w0_const = eval(argv[12])
+except Exception as ex5:
+    print('EXCEPTION regarding w0_const',ex5)
+    w0_const = False  #When in doubt, allow w0 to vary (along with wa, if infering wCDM cosmology)
+try:
+    key_int = eval(argv[13])
+except Exception as ex6:
+    print('EXCEPTION regarding key_int',ex6)
+    key_int = 0
+try:
+    GMM_zL = eval(argv[14])
+except Exception as ex7:
+    print('EXCEPTION regarding GMM_zL',ex7)
+    GMM_zL = False
+try:
+    GMM_zS = eval(argv[15])
+except Exception as ex8:
+    print('EXCEPTION regarding GMM_zS',ex8)
+    GMM_zS = False
+    
 print(f'Using {num_samples} samples with {num_warmup} as a warmup, and {num_chains} chains in total.')
 print(f'Assuming the cosmology type is {cosmo_type}')
 print(f'Full Covariance matrix setting set to {cov_redshift}')
 
 H0_fid = 70
 db_in = pd.read_csv(filein)
-#numpyro.enable_x64(True)
+numpyro.enable_x64(True)
 
 #Use the true redshifts when not allowing for photometry, 
 #otherwise this biases the results as the error is already built into zL_/zS_obs:
@@ -94,13 +126,15 @@ else:
     zS_to_use = jnp.array(db_in['zS_true'])
 
 #
-file_prefix = f'./chains/SL_orig_{filein.split("/")[2]}'+\
+file_prefix = f'./chains/SL_orig_{filein.split("/")[-1]}'+\
               f'_ph_{photometric}_con_{contaminated}'+\
               f'_{cosmo_type}_JAX_chains'
 file_search = glob.glob(f'{file_prefix}*')
 N_chains_saved = len(file_search)
-fileout = f'{file_prefix}_{N_chains_saved}.csv' #Will save first one as '_0'.
-fileout_warmup = f'{file_prefix}_{N_chains_saved}_warmup.csv' #Will save first one as '_0'.
+random_time = int(10*time.time())%1000
+fileout = f'{file_prefix}_{N_chains_saved}_{random_time}.csv' #Will save first one as '_0'.
+fileout_warmup = f'{file_prefix}_{N_chains_saved}_{random_time}_warmup.csv' #Will save first one as '_0'.
+print(f'Will be saving file to: {fileout}')
 if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.
 sampler_S = run_MCMC(photometric = photometric,
                     contaminated = contaminated,
@@ -119,9 +153,15 @@ sampler_S = run_MCMC(photometric = photometric,
                     H0=H0_fid,
                     target_accept_prob=target_accept_prob,
                     cov_redshift=cov_redshift,
-                    warmup_file=fileout_warmup)
+                    warmup_file=fileout_warmup,
+                    batch_bool=batch_bool,
+                    wa_const=wa_const,
+                    w0_const=w0_const,
+                    key_int=key_int,
+                    GMM_zL=GMM_zL,
+                    GMM_zS=GMM_zS)
 
-a=JAX_samples_to_dict(sampler_S,separate_keys=True,cosmo_type=cosmo_type)
+a=JAX_samples_to_dict(sampler_S,separate_keys=True,cosmo_type=cosmo_type,wa_const=wa_const,w0_const=w0_const)
 db_JAX = pd.DataFrame(a)
 db_JAX.to_csv(fileout,index=False)
 print('File search:',file_search)
