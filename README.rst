@@ -1,7 +1,7 @@
 COSMIC-BEAMS
 ------------
 
-A Bayesian framework to infer cosmological parameters from an photometric and impure sample of strong lenses. 
+A Bayesian framework to infer cosmological parameters from an photometric and impure sample of strong lenses: (COsmology using Strong lensing Measurements Including Contamination - Bayesian Estimation Applied to Multiple Species: COSMIC-BEAMS). 
 The original code was taken from `zBEAMS <https://github.com/MichelleLochner/zBEAMS/tree/master>`_, though has been substantially rewritten for the strong lensing case.
 
 Licence and Attribution
