@@ -21,7 +21,7 @@ def likelihood_with_bounds(MCMC_parameters, #Cosmology to find. NOTE If change t
         R_OBS=None,SIGMA_R_OBS=None, #Inputs
         likelihood=None, # Log-likelihood function, without any bounds
         SIGMA_R_OBS_2=None,P_TAU=None,# Optional Inputs if Contaminated=True
-        COSMO_TYPE=None,FLAT_BOOL=None,COMPLEX_EOS_BOOL=None,CONTAMINATED=None,PHOTOMETRIC=None):
+        COSMO_TYPE=None,FLAT_BOOL=None,COMPLEX_EOS_BOOL=None,CONTAMINATED=None,PHOTOMETRIC=None,trunc_r=False):
     SPECTROSCOPIC = not PHOTOMETRIC
     #OM,OD,H0,W0,WA
     if MCMC_parameters[0]<0 or MCMC_parameters[0]>1: print('Outside OM bound'); return -np.inf #OM
@@ -51,7 +51,7 @@ def likelihood_with_bounds(MCMC_parameters, #Cosmology to find. NOTE If change t
         #[9+len(r_obs):]: ZS_MCMC
         if SPECTROSCOPIC: return likelihood(MCMC_parameters[0],MCMC_parameters[1],
                                             MCMC_parameters[2],MCMC_parameters[3],MCMC_parameters[4],
-                                            ZL_OBS,ZS_OBS,R_OBS,SIGMA_R_OBS,COSMO_TYPE)
+                                            ZL_OBS,ZS_OBS,R_OBS,SIGMA_R_OBS,COSMO_TYPE,trunc_r=trunc_r)
         if PHOTOMETRIC: 
             if (MCMC_parameters[9:9+len(ZL_OBS)]>MCMC_parameters[9+len(ZL_OBS):]).any():
                 print('Redshifts unphysical')
@@ -112,7 +112,7 @@ def likelihood_with_bounds(MCMC_parameters, #Cosmology to find. NOTE If change t
     print('RETURNING NOTHING')
 
 def mcmc_SL(n,n_walkers,likelihood,zbias,mubias,OMi,Odei,H0i,wi,wai,omstep,ode_step,H0step,wstep,db_in,fileout,status,cosmo_type,
-            contaminated=None,photometric=None):
+            contaminated=None,photometric=None,trunc_r=False):
     assert contaminated is not None
     assert photometric is not None
     print(f'Assuming the sample is {"not "*(not contaminated)}contaminated, and that the redshifts are {"not "*(not photometric)}photometric')
@@ -183,7 +183,8 @@ def mcmc_SL(n,n_walkers,likelihood,zbias,mubias,OMi,Odei,H0i,wi,wai,omstep,ode_s
                                                 'COSMO_TYPE':cosmo_type,
                                                 'FLAT_BOOL':Flat_bool,'COMPLEX_EOS_BOOL':Complex_EoS_bool,
                                                 'CONTAMINATED':contaminated,
-                                                'PHOTOMETRIC':photometric},pool=pool)#,backend=backend)
+                                                'PHOTOMETRIC':photometric,
+                                                'trunc_r':trunc_r},pool=pool)#,backend=backend)
         if photometric: 
             if contaminated: ndim = 13+2*len(r_obs)#5 cosmo, 4 means, 4 diagonal covariances and all lens/source redshifts
             if not contaminated: ndim = 9 + 2*len(r_obs)#5 cosmo, 2 means, 2 diagonal covariances and all lens/source redshifts

@@ -33,6 +33,7 @@ else:
     if not photometric: likelihood = likelihood_spec_contam_SL
     if photometric: likelihood = likelihood_phot_contam_SL
 
+trunc_r = True #Asserting r>0 in the likelihood, in the case of spectroscopic redshifts and no contamination (a test case)
 mcmc_SL(
      n = steps,
      n_walkers = walkers,
@@ -53,6 +54,7 @@ mcmc_SL(
      status = True,
      cosmo_type = cosmo_type,
      contaminated = contaminated,
-     photometric = photometric)
+     photometric = photometric,
+     trunc_r=trunc_r)
 
 #addqueue -c '10min' -m 3 -n 5 -s /mnt/users/hollowayp/python11_env/bin/python3.11 ./run_zBEAMS.py

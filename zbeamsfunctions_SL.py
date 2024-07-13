@@ -7,7 +7,7 @@ from scipy.integrate import quad
 from scipy import interpolate
 from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM,w0waCDM,Flatw0waCDM
 from Lenstronomy_Cosmology import Background, LensCosmo
-from scipy.stats import multivariate_normal
+from scipy.stats import multivariate_normal,truncnorm
 def r_SL(zL,zS,cosmo):
     LensCosmo_i = LensCosmo(z_lens=zL,z_source=zS,cosmo=cosmo)
     D_LS = LensCosmo_i.dds
@@ -18,9 +18,15 @@ def r_SL(zL,zS,cosmo):
         assert False
     return r_value
 
+def truncated_normal_pdf(x,loc,scale,lower_lim):
+    if isinstance(lower_lim,int) and not isinstance(x,float):
+        lower_lim = lower_lim*np.ones(len(x))
+    return truncnorm(loc=loc,scale=scale,a=-(loc-lower_lim)/scale,b=np.inf).logpdf(x)
+
 #Note: CANNOT just adapt the zBEAMS spectroscopic code to have larger errorbars as they assume z is known.
 #E.g. See Eqn 4.4 of BEAMS paper.
-def likelihood_SL(OM,Ode,H0,w,wa,zL,zS,r_obs,sigma_r_obs,cosmo_type):
+def likelihood_SL(OM,Ode,H0,w,wa,zL,zS,r_obs,sigma_r_obs,cosmo_type,trunc_r=False):
+    print('Truncation (only in r_obs, as a test case):',trunc_r)
     '''
     If this code turns out to be quite slow, the previous likelihood function used interpolation.
     '''
@@ -30,8 +36,11 @@ def likelihood_SL(OM,Ode,H0,w,wa,zL,zS,r_obs,sigma_r_obs,cosmo_type):
     if cosmo_type == 'w0CDM': cosmo = wCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w)
     if cosmo_type =='wCDM': cosmo = w0waCDM(H0=H0, Om0=OM, Ode0=Ode, w0=w, wa=wa)
     r_theory = r_SL(zL,zS,cosmo)   
-    chi2 = ((r_obs-r_theory)/sigma_r_obs)**2
-    likeli = -0.5*sum(chi2)
+    if not trunc_r:
+        chi2 = ((r_obs-r_theory)/sigma_r_obs)**2
+        likeli = -0.5*sum(chi2)
+    else:
+        likeli = np.sum(truncated_normal_pdf(r_obs,r_theory,sigma_r_obs,0))
     return likeli
 
 def likelihood_spec_contam_SL(OM,Ode,H0,w,wa,zL,zS,r_obs,sigma_r_obs_1,sigma_r_obs_2,P_tau,cosmo_type):

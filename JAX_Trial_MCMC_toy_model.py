@@ -25,7 +25,7 @@ sigma_dict = {}
 N_obs = int(sys.argv[1])
 sigma_dict['z'] = float(sys.argv[2])
 sigma_dict['r'] = 5
-print(f'Input arguments: {N_obs}, {sigma_dict["z"]}')
+print(f'Input arguments: {N_obs}, {sigma_dict["z"]}',sys.argv)
 method = sys.argv[3]
 assert method in ['jax','emcee']
 if method =='emcee':
@@ -42,8 +42,16 @@ else:
     except: N_warmup = 1000
     try: N_samples = int(sys.argv[5])
     except: N_samples = 1000
-    try: batch = eval(sys.argv[5]);print('Batch bool:',batch)
-    except: batch=False
+    try: 
+        mcmc_type = sys.argv[6]
+        print('MCMC type',mcmc_type)
+        if mcmc_type=='batch': batch=True;barker=False
+        elif mcmc_type=='barker': batch=False;barker=True
+        else: batch=False;barker=False
+        print('Batch bool:',batch,'Barker bool:',barker)
+    except: 
+        batch=False
+        barker=False
 
 O_test = 0.3
 
@@ -77,7 +85,8 @@ else:
                             num_warmup = N_warmup,
                             num_samples = N_samples,
                             target_accept_prob=0.99,
-                            batch=batch)
+                            batch=batch,
+                            barker=barker)
     db_test = pd.DataFrame({f'theta_{chain_i}':jax_sampler.get_samples(True)['theta'][chain_i,:,0] 
                             for chain_i in range(N_chains)})
 

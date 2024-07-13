@@ -9,7 +9,7 @@ from numpyro import distributions as dist
 from numpyro import sample,factor,plate,subsample
 import jax.numpy as jnp
 from jax.random import PRNGKey
-from numpyro.infer import MCMC,NUTS,HMC,HMCECS
+from numpyro.infer import MCMC,NUTS,HMC,HMCECS,BarkerMH
 import time
 
 def marginalisation_test(z_obs,r_obs,sigma_z_obs,sigma_r_obs,N_steps=5000,verbose=False):
@@ -122,7 +122,7 @@ def j_marginalisation(z_obs,r_obs,sigma_z_obs,sigma_r_obs,key=None,quick_return=
 
 def run_MCMC_marginalisation(z_obs,r_obs,sigma_z_obs,sigma_r_obs,
             num_warmup = 200,num_samples=1000,num_chains=2,
-            target_accept_prob=0.8,warmup_file=np.nan,batch = False):
+            target_accept_prob=0.8,warmup_file=np.nan,batch = False,barker=False):
     key = PRNGKey(0)
     print(f'Target Accept Prob: {target_accept_prob}')
     model_args = {'z_obs':z_obs,'r_obs':r_obs,'sigma_z_obs':sigma_z_obs,'sigma_r_obs':sigma_r_obs,'batch':batch}
@@ -134,9 +134,14 @@ def run_MCMC_marginalisation(z_obs,r_obs,sigma_z_obs,sigma_r_obs,
     print('Uncompiled time',mt-st)
     print('Compiled time',et-mt)
     if batch:
+        print('Using HMCECS')
         inner_kernel = NUTS(model = j_marginalisation,target_accept_prob = target_accept_prob)         
         kernel = HMCECS(inner_kernel, num_blocks=100)
+    elif barker:
+        print('Using BarkerMH') 
+        kernel = BarkerMH(model = j_marginalisation)
     else:
+        print('Using NUTS')
         kernel = NUTS(model = j_marginalisation,target_accept_prob = target_accept_prob)
     sampler_0 = MCMC(kernel,
                     num_warmup=num_warmup,
