@@ -1,18 +1,23 @@
+'''
+Code description: This file infers the cosmological posteriors (as well as those for various population hyperparameters) given a sample of impure and/or photometric
+strong lenses.
+The MCMC is run using NUTS (https://num.pyro.ai/en/latest/mcmc.html#numpyro.infer.hmc.NUTS).
+The code allows for use of HMCECS (i.e. batching), though this can introduce unexpected biases so should be avoided wherever possible (and will likely be removed
+in subsequent commits).
+'''
+
 from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM,w0waCDM
 from JAX_samples_to_dict import JAX_samples_to_dict
 from numpyro import distributions as dist,infer
 from numpyro.infer import MCMC,NUTS,HMC,HMCECS,init_to_value,init_to_uniform
 from jax import random,grad, jit
-# import matplotlib.pyplot as pl
 import jax.numpy as jnp
 import jax_cosmo as jc
 from tqdm import tqdm
 import scipy.sparse
 import pandas as pd
-#import arviz as az
 import numpy as np
 import numpyro
-# import corner
 import emcee
 import sys
 import jax
@@ -20,9 +25,6 @@ import time
 from jax.scipy.stats import truncnorm as jax_truncnorm
 from Beta_Distribution_Class import beta_class
 from LogNormal_Distribution_Class import jax_lognormal 
-#jax.config.update("jax_enable_x64", True)
-# from numpyro.contrib.nested_sampling import NestedSampler
-# from jaxns import DefaultNestedSampler as NestedSampler
 
 class truncnorm_class:
     def __init__(self,loc,scale,a,b):
@@ -73,19 +75,35 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                     batch_bool=True, wa_const = False, w0_const = False,GMM_zL = False,GMM_zS = False,
                     fixed_GMM = False, GMM_zL_dict = {}, GMM_zS_dict = {},spec_indx = [],no_parent=False,
                     trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False):
+    '''
+    Main input args:
+    zL_obs: Observed lens redshift
+    zS_obs: Observed source redshift
+    sigma_zL_obs: Observed lens redshift uncertainty
+    sigma_zS_obs: Observed source redshift uncertainty
+    r_obs: Observed 'r' ratio (= c^2 * theta_E/ (4pi * sigma_v^2), where theta_E = Einstein radius, sigma_v = velocity dispersion).
+    sigma_r_obs: Observed r ratio uncertainty
+    P_tau_0: Prior probability a given system is a lens
+    cosmo_type: Which cosmology formulation to infer
+    P_tau_dist: Whether to use a distribution for P_tau, rather than a single value
+    sigma_P_tau: Width of P_tau distribution, where applicable.
+    lognorm_parent: Boolean for whether to include zL vs zS dependence (i.e. P(zS|zL)).
+    '''
     if lognorm_parent: assert not GMM_zL and not GMM_zS; assert no_parent
     if P_tau_dist: assert isinstance(sigma_P_tau,float) or len(sigma_P_tau)==len(P_tau_0)
     sigma_r_obs_2 = 100# sigma_r_obs
-    mu_zL_g_L=None;mu_zS_g_L = None
-    mu_zL_g_NL=None;mu_zS_g_NL = None
+    # Lens and source redshift parent hyperparameters
+    mu_zL_g_L=None;mu_zS_g_L = None # For true lenses 
+    mu_zL_g_NL=None;mu_zS_g_NL = None # For non-lenses
     sigma_zL_g_L=None;sigma_zS_g_L=None
     sigma_zL_g_NL=None;sigma_zS_g_NL=None
+    # Lens and source redshift parent hyperparameters (assuming gaussian mixture model):
     w_zL=None;w_zS=None
     mu_zL_g_L_A=None;mu_zL_g_L_B = None
     sigma_zL_g_L_A=None;sigma_zL_g_L_B=None
     sigma_01_g_L=None;sigma_01_g_NL=None
     sigma_10_g_L=None;sigma_10_g_NL=None
-    if likelihood_check:
+    if likelihood_check: #For bug-checking purposes
         phot_indx = list(set(np.arange(len(likelihood_dict['zL_obs'])).tolist())-set(spec_indx))
         if len(likelihood_dict['zL_obs'])<8000: subsample_size = len(likelihood_dict['zL_obs'])//2
         if len(likelihood_dict['zL_obs'])<=12000: subsample_size = 8000
@@ -100,6 +118,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
     #assert False #Also the MCMC redshift-only inference should definitely match the best fit value right??
     s8 = 0.8;n_s = 0.96;Ob=0; #Putting all the matter in dark-matter (doesn't make a difference)
     if not likelihood_check:
+        # The priors on lens and source redshifts, as well as any population redshift hyperparameters for photometric systems are added below:
         if photometric:
             print('Assuming photometric redshifts')
             zL_sigma = sigma_zL_obs;zS_sigma = sigma_zS_obs
@@ -119,6 +138,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             zS_obs_up_lim = jnp.array(zS_obs+5*zS_sigma)
             zS = numpyro.sample('zS',dist.Uniform(low = zS_obs_low_lim, high = zS_obs_up_lim),sample_shape=(1,),rng_key=key).flatten()
             #
+            # Assumes a lognormal relation for P(zS|zL), with a linear dependence of the lognormal hyperparameters on redshift:
             if lognorm_parent:
                 s_m = jnp.squeeze(numpyro.sample("s_m", dist.Uniform(-1,0),sample_shape=(1,),rng_key=key)) #-0.2
                 s_c = jnp.squeeze(numpyro.sample("s_c", dist.Uniform(0.01,2),sample_shape=(1,),rng_key=key)) #0.6
@@ -159,6 +179,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                 else:
                     mu_zS_g_L = jnp.squeeze(numpyro.sample("mu_zS_g_L", dist.Uniform(0.1,2),sample_shape=(1,),rng_key=key))
                     sigma_zS_g_L = jnp.squeeze(numpyro.sample("sigma_zS_g_L", dist.Uniform(0.01,1.5),sample_shape=(1,),rng_key=key))
+            # Adding a covariance term between zL and zS (this is no longer in use):
             if cov_redshift:
                 assert not GMM_zL and not GMM_zS
                 sigma_01_g_L =  jnp.squeeze(numpyro.sample("sigma_01_g_L", dist.Uniform(0.01,2),sample_shape=(1,),rng_key=key))
@@ -166,9 +187,11 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             else:
                 sigma_01_g_L =  0.0;sigma_10_g_L =  0.0
         else:
+            # If photometric=False, the redshift measurements are assumed to be perfect, with zero uncertainty.
             print('Assuming spectroscopic redshifts')
             zL = zL_obs #Think still need to have an error-budget when using spectroscopic redshifts?
             zS = zS_obs
+        # Prior on Omega_M:
         OM = jnp.squeeze(numpyro.sample("OM", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
         if cosmo_type in ['FlatLambdaCDM','FlatwCDM']:
             #Don't care about Ode, as it isn't an argument for the cosmology (OM and Ok are instead)
@@ -183,11 +206,14 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             # Ok = jnp.squeeze(numpyro.sample("Ok", dist.Uniform(-1,1),sample_shape=(1,),rng_key=key))
             # Ode = numpyro.deterministic('Ode',1-(OM+Ok))
             #Now just sampling Ode uniformly, and then setting Ok to 1-(OM+Ode):
+            # Prior on Omega_lambda:
             Ode = jnp.squeeze(numpyro.sample("Ode", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
             Ok = numpyro.deterministic('Ok',1-(OM+Ode))
         if cosmo_type in ['LambdaCDM','FlatLambdaCDM']:
             print('Assuming universe has a cosmological constant')
+            # Prior on w0:
             w = numpyro.deterministic('w',-1.0)
+            # Prior on wa:
             wa = numpyro.deterministic('wa',0.0)
         elif wa_const == True and w0_const == False:
             print('Assuming a non-evolving dark energy equation of state')
@@ -201,7 +227,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             print('Assuming non-trivial dark energy equation of state')
             w = jnp.squeeze(numpyro.sample("w", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) # Adding tighter constraints for now. Previously Physicality constraints, (-6,4)
             wa = jnp.squeeze(numpyro.sample("wa", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) #Matching Tian's constraints for now
-    if likelihood_check:
+    if likelihood_check: # For bug-checking purposes:
             OM = likelihood_dict['OM'];Ok = likelihood_dict['Ok']
             Ode = numpyro.deterministic('Ode',1-(OM+Ok))
             w = likelihood_dict['w'];wa=likelihood_dict['wa'];
@@ -221,12 +247,13 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             except: pass
     cosmo = jc.Cosmology(Omega_c=OM, h=H0/100, Omega_k=Ok, w0=w,
                          Omega_b=Ob, wa=wa, sigma8=s8, n_s=n_s)
+    # Calculating the theoretical 'r' ratio for given lens/source redshifts and cosmology:
     if cosmo_type in ['FlatLambdaCDM','FlatwCDM']: r_theory = j_r_SL_flat(zL,zS,cosmo)
     else: r_theory = j_r_SL(zL,zS,cosmo)
     if early_return: return
+    # If contaminated, need to know the prior probability each system is a lens (P_tau_0):
     if contaminated:
-        # if photometric: assert False #Haven't implemented new r(alpha) method for photometric systems.
-        if P_tau_dist:
+        if P_tau_dist: # Uses a distribution for P_tau, with mean P_tau_0 and width sigma_P_tau, rather than a single value:
             Beta_class_instance = beta_class(mean=P_tau_0,sigma=sigma_P_tau)
             beta_A = Beta_class_instance.A
             beta_B = Beta_class_instance.B
@@ -251,6 +278,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
         # r_theory_2_low_lim = r_theory_2_low_lim*(r_theory_2_low_lim>0)
         # r_theory_2_up_lim = jnp.array(r_obs+3*sigma_r_obs)
         r_theory_2 = numpyro.sample('r_theory_2',dist.Uniform(low = r_theory_2_low_lim, high = r_theory_2_up_lim),sample_shape=(1,),rng_key=key).flatten() 
+        # 'alpha' refers to the parent hyperparameters to be inferred if a system is not a lens:
         #LogNorm:
         # alpha_mu = numpyro.deterministic('alpha_mu',0) #jnp.squeeze(numpyro.sample("alpha_mu", dist.Uniform(-1,0),sample_shape=(1,),rng_key=key))
         # alpha_scale = jnp.squeeze(numpyro.sample("alpha_scale", dist.Uniform(0.1,5),sample_shape=(1,),rng_key=key))
@@ -355,9 +383,10 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                 prob_3 = jax_truncnorm.logpdf(x=zS_obs,loc=zS, scale=zS_sigma,a=-zS/zS_sigma,b=np.inf)
             else:
                 prob_3 = dist.Normal(zS, zS_sigma).log_prob(zS_obs)
+            # Including the dependence of the lens redshift on the source redshifts (and that zL<zS in all cases):
             if lognorm_parent:
                 s_z_min = 0.05
-                s_z = s_c+s_m*zL
+                s_z = s_c+s_m*zL # Assume a linear dependence of log-normal distribution on lens redshift
                 sc_z = scale_c+scale_m*zL
                 s_z = jnp.where(s_z<s_z_min,s_z_min,s_z)
                 prob_4 = jax_lognormal(x=zS-zL,
@@ -675,7 +704,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                 numpyro.factor('Likelihood',prob)    
         # numpyro.sample("r", dist.Normal(r_theory, sigma_r_obs), obs=r_obs)
  
-
+# Code to run the cosmology posterior sampling:
 def run_MCMC(photometric,contaminated,cosmo_type,
             zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,
             r_obs,sigma_r_obs,sigma_r_obs_2,P_tau_0,
