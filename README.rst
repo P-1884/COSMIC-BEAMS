@@ -5,4 +5,5 @@ The original code was taken from zBEAMS (https://github.com/MichelleLochner/zBEA
 
 # Licence and Attribution
 This software is licenced under the `MIT licence <https://choosealicense.com/licenses/mit/#>'_. If you use this code, please cite Holloway et al 2024 (in prep).
+
 `Birrer et al. 2021 <https://joss.theoj.org/papers/10.21105/joss.03283>`_
