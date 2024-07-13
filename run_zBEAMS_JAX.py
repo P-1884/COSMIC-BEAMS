@@ -4,6 +4,8 @@ import distutils
 import time
 import glob
 import numpy as np
+
+# Saves code each time it is run:
 N_code_backups = len(glob.glob('./code_backups/mcmcfunctions_SL_JAX*'))
 code_backup_file = f'./code_backups/mcmcfunctions_SL_JAX_{N_code_backups}_{np.round(time.time(),4)}.py'
 print(f'Saving code backup to {code_backup_file}')
@@ -13,27 +15,41 @@ with open(code_backup_file,'w') as f:
 
 def argument_parser():
     parser = argparse.ArgumentParser()
+    # Input database file
     parser.add_argument('--filein', type=str, help='Input file')
+    # Whether the systems are photometric:
     parser.add_argument('--p', dest='p', type=lambda x:bool(distutils.util.strtobool(x)))
+    # Whether the systems include contamination
     parser.add_argument('--c', dest='c', type=lambda x:bool(distutils.util.strtobool(x)))
+    # What cosmology to assume (FlatLambdaCDM, LambdaCDM, wCDM, FlatwCDM)
     parser.add_argument('--cosmo', type=str, help='Cosmology type')
+    # How many JAX steps to take in the MCMC:
     parser.add_argument('--num_samples', type=int, default = 1000, help='Number of samples')
+    # How many JAX warmup steps to take in the MCMC:
     parser.add_argument('--num_warmup', type=int, default = 1000, help='Number of warmup samples')
+    # How many chains in the MCMC:
     parser.add_argument('--num_chains', type=int, default = 2, help='Number of chains')
-    parser.add_argument('--N',type=int, default=10, help='Optional argument N')
+    # parser.add_argument('--N',type=int, default=10, help='Optional argument N')
     parser.add_argument('--target',type=float, default=0.8, help='Optional argument target_accept_prob')
     parser.add_argument('--cov_redshift', dest='cov_redshift', type=lambda x:bool(distutils.util.strtobool(x)),default=False)
     parser.add_argument('--batch', dest='batch', type=lambda x:bool(distutils.util.strtobool(x)),default=True)
+    # Whether to keep wa fixed:
     parser.add_argument('--wa_const', dest='wa_const', type=lambda x:bool(distutils.util.strtobool(x)),default=False)
+    # Whether to keep w0 fixed:
     parser.add_argument('--w0_const', dest='w0_const', type=lambda x:bool(distutils.util.strtobool(x)),default=False)
+    # Random Seed:
     parser.add_argument('--key',type=int, default=0, help='Optional argument key_int')
+    # Whether to use a gaussian mixture model for lens redshifts:
     parser.add_argument('--GMM_zL', action='store_true', help='Optional argument GMM_zL')
+    # Whether to use a gaussian mixture model for source redshifts:
     parser.add_argument('--GMM_zS', action='store_true', help='Optional argument GMM_zS')
     parser.add_argument('--fixed_GMM', action='store_true', help='Optional argument fix_GMM')
     parser.add_argument('--nested',action='store_true',help='Optional argument nested sampling')
     parser.add_argument('--no_parent',action='store_true',help='Optional argument nested sampling')
     parser.add_argument('--initialise_to_truth',action='store_true',help='Optional argument initialise to true values')
+    # Whether to use truncated gaussian distribution for lens redshifts:
     parser.add_argument('--trunc_zL',action='store_true',help='Optional argument truncate zL in the likelihood')
+    # Whether to use truncated gaussian distribution for source redshifts:
     parser.add_argument('--trunc_zS',action='store_true',help='Optional argument truncate zS in the likelihood')
     parser.add_argument('--archive',action='store_true',help='Use archive version of likelihood function, from Github')
     parser.add_argument('--P_tau_dist',action='store_true',help='Use a distribution for P_tau')
@@ -61,7 +77,7 @@ GMM_zL = argv.GMM_zL
 GMM_zS = argv.GMM_zS
 fixed_GMM = argv.fixed_GMM
 nested = argv.nested
-no_parent=argv.no_parent
+no_parent = argv.no_parent
 init_to_truth = argv.initialise_to_truth
 trunc_zL = argv.trunc_zL
 trunc_zS = argv.trunc_zS
@@ -70,9 +86,7 @@ P_tau_dist = argv.P_tau_dist
 sigma_P_tau = argv.sigma_P_tau
 lognorm_parent = argv.lognorm_parent
 import sys
-# argv = sys.argv
-# print('ARGS',argv)
-#import os
+
 #os.environ["JAX_ENABLE_X64"] = 'True'
 import numpyro
 numpyro.enable_validation(True)
@@ -81,17 +95,13 @@ import jax
 import time
 import os
 from jax import local_device_count,default_backend,devices
-# if default_backend()=='cpu': => Doesn't seem to recognise more than one device - always just prints jax.devices=1.
-#     numpyro.util.set_host_device_count(4)
-#     print('Device count:', len(jax.devices()))
-# def get_available_gpus():
-#     local_device_protos = device_lib.list_local_devices()
-#     return [x.name for x in local_device_protos if x.device_type == 'GPU']
-# print('GPU',get_available_gpus())
+
 from zbeamsfunctions_SL import likelihood_SL,likelihood_spec_contam_SL,likelihood_phot_contam_SL,likelihood_phot_SL,r_SL
 from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM,w0waCDM
 from zbeamsfunctions import mu_w,likelihood,likelihood_spec
-if archive:
+
+# Uses previous version of code (for bug-finding purposes), should be False by default:
+if archive: 
     try:
         from mcmcfunctions_SL_JAX_archive import j_likelihood_SL,run_MCMC
     except:
@@ -161,8 +171,7 @@ print('DB In:',db_in)
 print(db_in.columns)
 numpyro.enable_x64(True)
 
-#Use the true redshifts when not allowing for photometry, 
-#otherwise this biases the results as the error is already built into zL_/zS_obs:
+# Use the true redshifts when not allowing for photometry, otherwise this biases the results as the error is already built into zL_/zS_obs:
 if photometric:
     zL_to_use = jnp.array(db_in['zL_obs'])
     zS_to_use = jnp.array(db_in['zS_obs'])
@@ -170,7 +179,6 @@ else:
     zL_to_use = jnp.array(db_in['zL_true'])
     zS_to_use = jnp.array(db_in['zS_true'])
 
-#
 file_prefix = f'./chains/SL_orig_{filein.split("/")[-1]}'+\
               f'_ph_{photometric}_con_{contaminated}'+\
               f'_{cosmo_type}_JAX_chains'
@@ -180,7 +188,8 @@ random_time = int(10*time.time())%1000
 fileout = f'{file_prefix}_{N_chains_saved}_{random_time}.csv' #Will save first one as '_0'.
 fileout_warmup = f'{file_prefix}_{N_chains_saved}_{random_time}_warmup.csv' #Will save first one as '_0'.
 print(f'Will be saving file to: {fileout}')
-# if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.
+
+if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.
 
 if archive:
     additional_args={}
@@ -226,6 +235,7 @@ sampler_S = run_MCMC(photometric = photometric,
                     GMM_zS=GMM_zS,
                     **additional_args)
 
+# Saves JAX chains to a pandas DataFrame:
 a=JAX_samples_to_dict(sampler_S,separate_keys=True,cosmo_type=cosmo_type,wa_const=wa_const,w0_const=w0_const,fixed_GMM=fixed_GMM)
 db_JAX = pd.DataFrame(a)
 db_JAX.to_csv(fileout,index=False)
