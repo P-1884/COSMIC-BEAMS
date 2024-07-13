@@ -1,3 +1,10 @@
+'''
+Code description:
+This code runs the main COSMIC-BEAMS inference. The input database (--filein) and other settings (e.g. whether the input systems are spectroscopic/photometric,
+confirmed or impure) are added as optional arguments, before being passed to run_MCMC which is located in mcmcfunctions_SL_JAX.py. The outputs (MCMC chains) 
+are then saved to a .csv file.
+'''
+
 #from tensorflow.python.client import device_lib
 import argparse
 import distutils
