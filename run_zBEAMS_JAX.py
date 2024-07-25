@@ -11,14 +11,19 @@ import distutils
 import time
 import glob
 import numpy as np
-
+from convert_ipynb_to_py import save_notebook_as_python_file 
 # Saves code each time it is run:
-N_code_backups = len(glob.glob('./code_backups/mcmcfunctions_SL_JAX*'))
-code_backup_file = f'./code_backups/mcmcfunctions_SL_JAX_{N_code_backups}_{np.round(time.time(),4)}.py'
+N_code_backups = np.max([len(glob.glob('./code_backups/mcmcfunctions_SL_JAX*')),
+                         len(glob.glob('./code_backups/zBEAMS_Application_to_Strong_Lensing.py*'))])
+code_backup_time = np.round(time.time(),4)
+code_backup_file = f'./code_backups/mcmcfunctions_SL_JAX_{N_code_backups}_{code_backup_time}.py'
 print(f'Saving code backup to {code_backup_file}')
 with open(code_backup_file,'w') as f:
     for line in open('./mcmcfunctions_SL_JAX.py'):
         f.write(line)
+notebook_backup_file = f'./code_backups/zBEAMS_Application_to_Strong_Lensing_{N_code_backups}_{code_backup_time}.py'
+print(f'Saving notebook backup to {notebook_backup_file}')
+save_notebook_as_python_file('./zBEAMS_Application_to_Strong_Lensing.ipynb',notebook_backup_file)
 
 def argument_parser():
     parser = argparse.ArgumentParser()
