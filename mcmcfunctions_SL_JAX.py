@@ -48,10 +48,15 @@ def likelihood_PC(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_4a,prob_4b,prob_5a,pr
 
 @jit
 def likelihood_PC_no_parent(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS):
-        # jax.debug.print('Likelihood_pc Output: {a},{b},{c},{d},{e},{f}',a=P_tau,b=jnp.exp(prob_1a),c=(1-P_tau),d=jnp.exp(prob_1b),e=prob_2,f=prob_3)
+        # jax.debug.print('Likelihood_pc Output: {a},{b},{c},{d},{e},{f},{g}',a=P_tau,b=jnp.exp(prob_1a),c=(1-P_tau),d=jnp.exp(prob_1b),e=prob_2,f=prob_3,g=prob_zL_zS)
         # jax.debug.print('To be logged {a}',a=jnp.min(P_tau*jnp.exp(prob_1a)+(1-P_tau)*jnp.exp(prob_1b)))
-        return jnp.log(P_tau*jnp.exp(prob_1a)+\
-                       (1-P_tau)*jnp.exp(prob_1b))+prob_2+prob_3+prob_zL_zS
+        likelihood_p1 = P_tau*jnp.exp(prob_1a)
+        likelihood_p2 = (1-P_tau)*jnp.exp(prob_1b)
+        likelihood_prelim = jnp.log(likelihood_p1+likelihood_p2)
+        #Accounting for rounding errors - when p1 is zero, can just use the logged version of p2 alone, and vice versa.
+        likelihood_prelim = jnp.where(likelihood_p1==0,jnp.log(1-P_tau)+prob_1b,likelihood_prelim)
+        likelihood_prelim = jnp.where(likelihood_p2==0,jnp.log(P_tau)+prob_1a,likelihood_prelim)
+        return likelihood_prelim+prob_2+prob_3+prob_zL_zS
 
 def breakpoint_if_nonfinite(prob,zL,zS,r_theory,OM,Ode,Ok,w,wa):
   is_finite = jnp.isfinite(prob).all()
@@ -74,7 +79,8 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                     likelihood_check=False,likelihood_dict = {},cov_redshift=False,early_return=False,
                     batch_bool=True, wa_const = False, w0_const = False,GMM_zL = False,GMM_zS = False,
                     fixed_GMM = False, GMM_zL_dict = {}, GMM_zS_dict = {},spec_indx = [],no_parent=False,
-                    trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False):
+                    trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False,
+                    unimodal_beta=True,bimodal_beta=False):
     '''
     Main input args:
     zL_obs: Observed lens redshift
@@ -289,7 +295,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
         alpha_s = np.nan
         alpha_mu_2 = jnp.squeeze(numpyro.sample("alpha_mu_2", dist.Uniform(0,2),sample_shape=(1,),rng_key=key))
         alpha_scale_2 = jnp.squeeze(numpyro.sample("alpha_scale_2", dist.Uniform(0.01,5),sample_shape=(1,),rng_key=key))
-        alpha_w = jnp.squeeze(numpyro.sample("alpha_w", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
+        alpha_w = jnp.squeeze(numpyro.sample("alpha_weights", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
         def spectroscopic_and_contaminated_likelihood(P_tau,r_obs,r_theory,sigma_r_obs,
                                                       r_theory_2,sigma_r_obs_2,
                                                       alpha_mu,alpha_scale,alpha_s):
@@ -612,7 +618,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                                         scale=sc_z).log_prob()
             else: prob_zL_zS=0
             if no_parent: 
-                # jax.debug.print('Likelihood Outputs: {a},{b},{c},{d}',a=jnp.sum(prob_1a),b=jnp.sum(prob_1b),c=jnp.sum(prob_2),d=jnp.sum(prob_3))
+                # jax.debug.print('Likelihood Outputs: {a},{b},{c},{d} {e}',a=jnp.sum(prob_1a),b=jnp.sum(prob_1b),c=jnp.sum(prob_2),d=jnp.sum(prob_3),e=jnp.sum(prob_zL_zS))
                 # jax.debug.print('P_tau,{P_tau}',P_tau=P_tau)
                 prob =  likelihood_PC_no_parent(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS)
             else: 
@@ -620,12 +626,13 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                                 # a=jnp.sum(prob_1a),b=jnp.sum(prob_1b),c=jnp.sum(prob_2),
                                 # d=jnp.sum(prob_3),e=jnp.sum(prob_4a),f=jnp.sum(prob_4b),g=jnp.sum(prob_5a),h=jnp.sum(prob_5b))
                 prob =  likelihood_PC(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_4a,prob_4b,prob_5a,prob_5b)
-            # jax.debug.print('Likelihood {p}',p=jnp.sum(prob))
+            # jax.debug.print('Likelihood: {p}',p=jnp.sum(prob))
             prob = jnp.where(Ode*jnp.ones(len(prob))<0,-np.inf,prob)           
             # jax.debug.print('Likelihood {p}',p=jnp.sum(prob))
             prob = jnp.where(Ode*jnp.ones(len(prob))>1,-np.inf,prob)
             # jax.debug.print('Likelihood {p}',p=jnp.sum(prob))
             # jax.debug.print('Likelihood {p}',p=prob)
+            # jax.debug.print('OM: {a}',a=OM)
             return prob                                             
         if batch_bool:
             with numpyro.plate("N", zL_obs.shape[0], subsample_size = subsample_size):
@@ -714,10 +721,14 @@ def run_MCMC(photometric,contaminated,cosmo_type,
             fixed_GMM=False,GMM_zL_dict={},GMM_zS_dict={},nested_sampling=False,zL_true=None,zS_true=None,
             no_parent=False,initialise_to_truth=False,trunc_zL=False,trunc_zS=False,
             P_tau_dist=False,sigma_P_tau = None,lognorm_parent=False,
-            r_true = None):
+            r_true = None,unimodal_beta=True,bimodal_beta=False):
     print('Random key:',key_int)
-    print('USING MAXIMUM (AND POSSIBLY VARYING) SIGMA_P_TAU POSSIBLE')
-    sigma_P_tau = beta_class().max_sigma_for_unimodal_beta(P_tau_0)
+    if unimodal_beta:
+        print('USING MAXIMUM (AND POSSIBLY VARYING) SIGMA_P_TAU POSSIBLE')
+        sigma_P_tau = beta_class().max_sigma_for_unimodal_beta(P_tau_0)
+    elif bimodal_beta:
+        print('USING SIGMA_P_TAU CORRESPONDING TO BIMODAL BETA')
+        sigma_P_tau = beta_class().min_sigma_for_bimodal_beta(P_tau_0)
     model_args = {'zL_obs':zL_obs,'zS_obs':zS_obs,
                 'sigma_zL_obs':sigma_zL_obs,'sigma_zS_obs':sigma_zS_obs,
                 'r_obs':r_obs,'sigma_r_obs':sigma_r_obs,'sigma_r_obs_2':sigma_r_obs_2,
@@ -727,7 +738,8 @@ def run_MCMC(photometric,contaminated,cosmo_type,
                 'wa_const':wa_const,'w0_const':w0_const,'GMM_zL':GMM_zL,'GMM_zS':GMM_zS,
                 'GMM_zL_dict':GMM_zL_dict,'GMM_zS_dict':GMM_zS_dict,'fixed_GMM':fixed_GMM,
                 'no_parent':no_parent,'trunc_zL':trunc_zL,'trunc_zS':trunc_zS,
-                'P_tau_dist':P_tau_dist,'sigma_P_tau':sigma_P_tau,'lognorm_parent':lognorm_parent}
+                'P_tau_dist':P_tau_dist,'sigma_P_tau':sigma_P_tau,'lognorm_parent':lognorm_parent,
+                'unimodal_beta':unimodal_beta,'bimodal_beta':bimodal_beta}
     print(f'Model args: {model_args}')
     key = jax.random.PRNGKey(key_int)
     print(f'Target Accept Prob: {target_accept_prob}')

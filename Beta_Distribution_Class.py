@@ -15,6 +15,7 @@ class beta_class:
     def beta_func_scipy(self):
         assert self.A>0;assert self.B>0
         assert self.sigma**2<(self.mean*(1-self.mean))
+        # print('A,B',self.A,self.B)
         return beta(a=self.A,b=self.B)
 
     def beta_func_numpyro(self,X):
@@ -26,3 +27,18 @@ class beta_class:
             return np.array([(elem*(1-elem)*np.min([elem/(1+elem),(1-elem)/(2-elem)]))**0.5 for elem in X])
         except:
             return (X*(1-X)*np.min([X/(1+X),(1-X)/(2-X)]))**0.5
+
+    def min_sigma_for_bimodal_beta(self,X):
+        try:
+            len(X)
+            return np.array([np.sqrt(elem*(1-elem)/2) for elem in X])
+        except:
+            return np.sqrt(X*(1-X)/2)
+        
+
+    def max_possible_sigma(self,X):
+        try:
+            len(X)
+            return np.array([np.sqrt(elem*(1-elem)) for elem in X])
+        except:
+            return np.sqrt(X*(1-X))
