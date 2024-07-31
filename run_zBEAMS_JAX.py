@@ -69,6 +69,7 @@ def argument_parser():
     parser.add_argument('--lognorm_parent',action='store_true',help='Use a lognormal distribution for the parent')
     parser.add_argument('--unimodal_beta', dest='unimodal_beta', type=lambda x:bool(distutils.util.strtobool(x)),default=True)
     parser.add_argument('--bimodal_beta', dest='bimodal_beta', type=lambda x:bool(distutils.util.strtobool(x)),default=False)
+    parser.add_argument('--true_zL_zS_dep',action='store_true',help='Use true P(zL|zS) relation in the likelihood')
     args = parser.parse_args()
     return args
 
@@ -101,6 +102,7 @@ sigma_P_tau = argv.sigma_P_tau
 lognorm_parent = argv.lognorm_parent
 unimodal_beta = argv.unimodal_beta
 bimodal_beta = argv.bimodal_beta
+true_zL_zS_dep = argv.true_zL_zS_dep
 assert not (unimodal_beta and bimodal_beta) #Can't have both as True.
 import sys
 
@@ -226,7 +228,8 @@ else:
                     'lognorm_parent':lognorm_parent,
                     'r_true':db_in['r_true'].to_numpy(),
                     'unimodal_beta':unimodal_beta,
-                    'bimodal_beta':bimodal_beta}
+                    'bimodal_beta':bimodal_beta,
+                    'true_zL_zS_dep':true_zL_zS_dep}
 
 sampler_S = run_MCMC(photometric = photometric,
                     contaminated = contaminated,
