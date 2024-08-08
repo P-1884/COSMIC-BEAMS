@@ -198,14 +198,14 @@ else:
     zL_to_use = jnp.array(db_in['zL_true'])
     zS_to_use = jnp.array(db_in['zS_true'])
 
-file_prefix = f'./chains/SL_orig_{filein.split("/")[-1]}'+\
+file_prefix = f'/mnt/extraspace/hollowayp/zBEAMS_data/chains/SL_orig_{filein.split("/")[-1]}'+\
               f'_ph_{photometric}_con_{contaminated}'+\
               f'_{cosmo_type}_JAX_chains'
 file_search = glob.glob(f'{file_prefix}*')
 N_chains_saved = len(file_search)
-random_time = int(10*time.time())%1000
-fileout = f'{file_prefix}_{N_chains_saved}_{random_time}.csv' #Will save first one as '_0'.
-fileout_warmup = f'{file_prefix}_{N_chains_saved}_{random_time}_warmup.csv' #Will save first one as '_0'.
+random_time = str(time.time())[-5:]
+fileout = f'{file_prefix}_{N_chains_saved}_{key_int}_{random_time}.csv' #Will save first one as '_0'.
+fileout_warmup = f'{file_prefix}_{N_chains_saved}_{key_int}_{random_time}_warmup.csv' #Will save first one as '_0'.
 print(f'Will be saving file to: {fileout}')
 
 if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.

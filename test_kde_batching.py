@@ -8,6 +8,8 @@ import pandas as pd
 import matplotlib.pyplot as pl
 from tqdm import tqdm
 import time
+from sklearn.mixture import GaussianMixture as GMM
+from KDEpy import NaiveKDE,TreeKDE,FFTKDE
 class test_kde_batching():
 	def __init__(self,N_data,N_batch,truth_dict,inf_if_weights_unordered=False):
 		self.N_data = N_data
@@ -144,10 +146,11 @@ def order_weights_0(MCMC_dict,N_comp):
 
 
 class kde_posterior_batching:
-	def __init__(self,list_of_data_samples,list_of_list_of_weight_hyperparameters): # Nested lists of separate weight hyperparameters
+	def __init__(self,list_of_data_samples,list_of_list_of_weight_hyperparameters,bw_factor=None): # Nested lists of separate weight hyperparameters
 		self.N_batch = len(list_of_data_samples)
 		print('N_batch',self.N_batch)
 		self.list_of_data_samples = list_of_data_samples
+		self.list_of_reweighted_data_samples = [(elem-rescaling_dict['mu'])/rescaling_dict[std] for elem in range(len(self.list_of_data_samples))]
 		# print('list of data samples',self.list_of_data_samples)
 		self.hyperparameters = self.list_of_data_samples[0].columns
 		# print('Hyperparameters',self.hyperparameters)
@@ -163,31 +166,34 @@ class kde_posterior_batching:
 		for elem in self.weight_hyperparameters:
 			 print('Weight list:',elem)
 		self.ordered_weights = False
+		self.bw_factor = bw_factor
 		return
-	def order_weights(self):
-		for batch_i in range(self.N_batch):
-			MCMC_batch_i = self.list_of_data_samples[batch_i]
-			MCMC_ordered_batch_i = MCMC_batch_i[self.nonweight_hyperparameters]
-			for weight_parameter_list_0 in self.weight_hyperparameters:
-				weight_parameter_list_i = [elem for elem in weight_parameter_list_0 if 'weight' in elem]
-				# print('weight param i',weight_parameter_list_i)
-				N_comp_i = len(weight_parameter_list_i)
-				prefix_i = weight_parameter_list_i[0].split('_weight')[0]
-				weight_order_i = np.argsort(MCMC_batch_i[weight_parameter_list_i].median(axis=0)).to_numpy()
-				# print('Weight order i',weight_order_i)
-				# print('Batch:',batch_i,'Weight:',weight_parameter_list_i)
-				# print('Median:',MCMC_batch_i[weight_parameter_list_i].median(axis=0))
-				weight_order_i = np.array([[f'{prefix_i}_mu_{elem}',f'{prefix_i}_scale_{elem}',f'{prefix_i}_weights_{elem}'] for elem in np.arange(N_comp_i)[weight_order_i]]).flatten().tolist()
-				# print('Final weight order ii',weight_order_i)
-				# print(type(MCMC_batch_i),'columns',MCMC_batch_i.columns)
-				MCMC_batch_weight_columns_i = MCMC_batch_i[weight_order_i].to_numpy()
-				ordered_column_names = np.array([[f'{prefix_i}_mu_{elem}',f'{prefix_i}_scale_{elem}',f'{prefix_i}_weights_{elem}'] for elem in np.arange(N_comp_i)]).flatten().tolist()
-				MCMC_ordered_batch_i = pd.concat([MCMC_ordered_batch_i,
-												 pd.DataFrame(MCMC_batch_weight_columns_i,columns = ordered_column_names)],axis=1)
-			self.list_of_data_samples[batch_i] = MCMC_ordered_batch_i
-		self.ordered_weights = True
-		return self
-	def find_kde_product(self,MCMC_db,N_batch,N_steps,list_of_weight_hyperparams,population_hyperparameters):
+	# Commenting this out in the hope I don't need it any more?
+	# def order_weights(self):
+	#   assert False #Haven't implemented reweighting to mu=0,sigma=1 for this function yet.
+	# 	for batch_i in range(self.N_batch):
+	# 		MCMC_batch_i = self.list_of_data_samples[batch_i]
+	# 		MCMC_ordered_batch_i = MCMC_batch_i[self.nonweight_hyperparameters]
+	# 		for weight_parameter_list_0 in self.weight_hyperparameters:
+	# 			weight_parameter_list_i = [elem for elem in weight_parameter_list_0 if 'weight' in elem]
+	# 			# print('weight param i',weight_parameter_list_i)
+	# 			N_comp_i = len(weight_parameter_list_i)
+	# 			prefix_i = weight_parameter_list_i[0].split('_weight')[0]
+	# 			weight_order_i = np.argsort(MCMC_batch_i[weight_parameter_list_i].median(axis=0)).to_numpy()
+	# 			# print('Weight order i',weight_order_i)
+	# 			# print('Batch:',batch_i,'Weight:',weight_parameter_list_i)
+	# 			# print('Median:',MCMC_batch_i[weight_parameter_list_i].median(axis=0))
+	# 			weight_order_i = np.array([[f'{prefix_i}_mu_{elem}',f'{prefix_i}_scale_{elem}',f'{prefix_i}_weights_{elem}'] for elem in np.arange(N_comp_i)[weight_order_i]]).flatten().tolist()
+	# 			# print('Final weight order ii',weight_order_i)
+	# 			# print(type(MCMC_batch_i),'columns',MCMC_batch_i.columns)
+	# 			MCMC_batch_weight_columns_i = MCMC_batch_i[weight_order_i].to_numpy()
+	# 			ordered_column_names = np.array([[f'{prefix_i}_mu_{elem}',f'{prefix_i}_scale_{elem}',f'{prefix_i}_weights_{elem}'] for elem in np.arange(N_comp_i)]).flatten().tolist()
+	# 			MCMC_ordered_batch_i = pd.concat([MCMC_ordered_batch_i,
+	# 											 pd.DataFrame(MCMC_batch_weight_columns_i,columns = ordered_column_names)],axis=1)
+	# 		self.list_of_data_samples[batch_i] = MCMC_ordered_batch_i
+	# 	self.ordered_weights = True
+	# 	return self
+	def find_kde_product_0(self,MCMC_db,N_batch,N_steps,list_of_weight_hyperparams,population_hyperparameters):
 			'''
 			list_of_weight_hyperparams: E.g. ['alpha'] to collectively account for ['alpha_mu_0','alpha_scale_0','alpha_weights_0','alpha_mu_1','alpha_scale_1','alpha_weights_1',...]
 			population_hyperparameters: E.g. ['OM','Ode',...,'alpha_mu_0','alpha_scale_0','alpha_weights_0','alpha_mu_1','alpha_scale_1','alpha_weights_1',...]
@@ -202,7 +208,7 @@ class kde_posterior_batching:
 				dict_of_list_of_weight_indx[weight_hyperparam] = [np.where(MCMC_db[0].columns==f'{weight_hyperparam}_weights_{comp_i}')[0][0] for comp_i in range(list_of_weight_components[weight_hyperparam])]
 			# print(list_of_list_of_weight_indx)
 			# print('Input',[MCMC_db[elem].T for elem in range(N_batch)])
-			kde = {elem:gaussian_kde(MCMC_db[elem].T) for elem in range(N_batch)}
+			kde = {elem:gaussian_kde(MCMC_db[elem].T,bw_method=self.bw_factor) for elem in range(N_batch)}
 			def gaussian_kde_product_log_prob(x):
 				for hyperparam_indx in dict_of_list_of_weight_indx.keys():
 					for comp_indx in dict_of_list_of_weight_indx[hyperparam_indx]:
@@ -213,7 +219,9 @@ class kde_posterior_batching:
 			n_walkers = 2*len(population_hyperparameters)+2
 			sampler = EnsembleSampler(nwalkers=n_walkers,ndim=len(population_hyperparameters),log_prob_fn=gaussian_kde_product_log_prob)
 			cur_state_0 = [] 
-			cur_simplex = {weight_hyperparam:np.random.dirichlet([1]*list_of_weight_components[weight_hyperparam],size=(n_walkers,1)) for 
+			#Adding one here, as the final weight isn't included the list to make sure one of the weights isn't determinstic in the MCMC.
+			#Adding one, so the sum of all but the last weights sum up to less than one:
+			cur_simplex = {weight_hyperparam:np.random.dirichlet([1]*(list_of_weight_components[weight_hyperparam]+1),size=(n_walkers,1)) for 
 								weight_hyperparam in list_of_weight_hyperparams}
 			cur_simplex_iter = {elem:0 for elem in list_of_weight_hyperparams}
 			# Not currently putting weights in order
@@ -229,3 +237,80 @@ class kde_posterior_batching:
 			cur_state = np.concatenate(cur_state_0,axis=1)
 			_ = sampler.run_mcmc(cur_state,N_steps,progress=True,skip_initial_state_check=True)
 			return sampler,kde
+
+from sklearn.neighbors import KernelDensity
+import warnings
+def find_kde_product_reweighting(MCMC_db,N_batch,N_steps,list_of_weight_hyperparams,population_hyperparameters,bounded_dict = {},
+								 rescaling_dict=None,kernel='gaussian',bandwidth=0.1,p_value=2.0):
+	'''
+	list_of_weight_hyperparams: E.g. ['alpha'] to collectively account for ['alpha_mu_0','alpha_scale_0','alpha_weights_0','alpha_mu_1','alpha_scale_1','alpha_weights_1',...]
+	population_hyperparameters: E.g. ['OM','Ode',...,'alpha_mu_0','alpha_scale_0','alpha_weights_0','alpha_mu_1','alpha_scale_1','alpha_weights_1',...]
+	bounded_params: E.g. ['OM']: Parameters bounded between 0 and 1
+	'''
+	if rescaling_dict is None:
+		rescaling_dict = {'mu':{elem:0 for elem in population_hyperparameters},
+						  'std':{elem:1 for elem in population_hyperparameters}} #I.e. apply no prescaling unless set.
+	print(rescaling_dict)
+	# assert self.ordered_weights #Must have ordered the hyperparameter weights first - Update - don't think I do as they're all degenerate?
+	MCMC_db = [MCMC_db[b_iii][population_hyperparameters] for b_iii in range(N_batch)]
+	reweighted_MCMC_db = [(MCMC_db[b_iii]-rescaling_dict['mu'])/rescaling_dict['std'] for b_iii in range(N_batch)]
+	print('list',list_of_weight_hyperparams)
+	list_of_weight_components = {elem:len(reweighted_MCMC_db[0].filter(like=f'{elem}_weights',axis=1).columns) for elem in list_of_weight_hyperparams}
+	print('dict',list_of_weight_components)
+	dict_of_list_of_weight_indx = {} #Where the weights are in the MCMC_db columns, for a specific hyperparameter
+	for weight_hyperparam in list_of_weight_hyperparams:
+		dict_of_list_of_weight_indx[weight_hyperparam] = [np.where(reweighted_MCMC_db[0].columns==f'{weight_hyperparam}_weights_{comp_i}')[0][0] for comp_i in range(list_of_weight_components[weight_hyperparam])]
+	bounded_params_indx = {elem:np.where(reweighted_MCMC_db[0].columns==elem)[0] for elem in bounded_dict.keys()}
+	# print(list_of_list_of_weight_indx)
+	# print('Input',[reweighted_MCMC_db[elem].T for elem in range(N_batch)])
+	# print('Input',reweighted_MCMC_db[0].describe())
+	# kde = {elem:gaussian_kde(reweighted_MCMC_db[elem].T,bw_method=1.0) for elem in range(N_batch)}
+	# kde = {elem: KernelDensity(kernel='tophat',bandwidth=0.5).fit(reweighted_MCMC_db[elem]) for elem in range(N_batch)}
+	# kde = {elem: NaiveKDE(kernel='gaussian', bw=0.1,norm=p_value).fit(data=reweighted_MCMC_db[elem].to_numpy()) for elem in range(N_batch)}
+	#Perhaps best so far:
+	# kde = {elem: TreeKDE(kernel='gaussian', bw=1.0,norm=p_value).fit(data=reweighted_MCMC_db[elem].to_numpy()) for elem in range(N_batch)}
+	# kde = {elem: TreeKDE(kernel=kernel, bw=bandwidth,norm=p_value).fit(data=reweighted_MCMC_db[elem].to_numpy()) for elem in range(N_batch)}
+	kde = {elem:GMM(n_components=1000).fit(X=reweighted_MCMC_db[elem])for elem in tqdm(range(N_batch))}
+
+	def gaussian_kde_product_log_prob(x):
+		for hyperparam_indx in dict_of_list_of_weight_indx.keys():
+			for comp_indx in dict_of_list_of_weight_indx[hyperparam_indx]:
+				hyper_param_iii = reweighted_MCMC_db[0].columns[comp_indx]
+				if ((x[comp_indx]*rescaling_dict['std'][hyper_param_iii])+rescaling_dict['mu'][hyper_param_iii])<0 or \
+				   ((x[comp_indx]*rescaling_dict['std'][hyper_param_iii])+rescaling_dict['mu'][hyper_param_iii])>1: return -np.inf #Weights must be 0<=x<=1
+		for bound_ii in bounded_dict.keys():
+			if ((x[bounded_params_indx[bound_ii]]*rescaling_dict['std'][bound_ii])+rescaling_dict['mu'][bound_ii])<bounded_dict[bound_ii][0] or\
+				((x[bounded_params_indx[bound_ii]]*rescaling_dict['std'][bound_ii])+rescaling_dict['mu'][bound_ii])>bounded_dict[bound_ii][1]: return -np.inf #Must be 0<=x<=1
+		# if (x[2]>x[5]) or (x[5]>x[8]): return -np.inf #Not currently asserting weight ordering as not imposed in the MCMC?
+		# log_prob =  np.sum(np.array([kde[elem].score([x]) for elem in range(N_batch)]),axis=0)
+		# log_prob = np.sum(np.array([kde[elem].logpdf(x) for elem in range(N_batch)]),axis=0)
+		# log_prob = float(np.sum(np.array([np.log(kde[elem].evaluate(np.array([x]))) for elem in range(N_batch)]),axis=0))
+		log_prob = float(np.sum(np.array([kde[elem].score([x]) for elem in range(N_batch)]),axis=0))
+		if np.random.random()<0.001: print(log_prob)
+		return log_prob
+	n_walkers = 2*len(population_hyperparameters)+2
+	sampler = EnsembleSampler(nwalkers=n_walkers,ndim=len(population_hyperparameters),log_prob_fn=gaussian_kde_product_log_prob)
+	cur_state_0 = [] 
+	#Adding one here, as the final weight isn't included the list to make sure one of the weights isn't determinstic in the MCMC.
+	#Adding one, so the sum of all but the last weights sum up to less than one:
+	cur_simplex = {weight_hyperparam:np.random.dirichlet([1]*(list_of_weight_components[weight_hyperparam]+1),size=(n_walkers,1)) for 
+						weight_hyperparam in list_of_weight_hyperparams}
+	cur_simplex_iter = {elem:0 for elem in list_of_weight_hyperparams}
+	# Not currently putting weights in order
+	for col_i in reweighted_MCMC_db[0].columns:
+		min_hyper_val = np.min([np.min(reweighted_MCMC_db[b_ii][col_i]) for b_ii in range(N_batch)])
+		max_hyper_val = np.max([np.max(reweighted_MCMC_db[b_ii][col_i]) for b_ii in range(N_batch)])
+		if 'weight' in col_i: 
+			hyperparam_ii = col_i.split('_weights')[0]
+			w_ii = (cur_simplex[hyperparam_ii].T[cur_simplex_iter[hyperparam_ii]].T-rescaling_dict['mu'][col_i])/rescaling_dict['std'][col_i]
+			cur_state_0.append(w_ii);cur_simplex_iter[hyperparam_ii]+=1
+		else: 
+			cur_state_0.append(np.random.uniform(low=min_hyper_val,high=max_hyper_val,size=(n_walkers,1)))
+	cur_state = np.concatenate(cur_state_0,axis=1)
+	with warnings.catch_warnings(action="ignore",category=UserWarning):
+		_ = sampler.run_mcmc(cur_state,N_steps,progress=True,skip_initial_state_check=True)
+	samples = {walker_i:pd.DataFrame(sampler.get_chain()[:,walker_i,:],columns=population_hyperparameters)*rescaling_dict['std']+rescaling_dict['mu']\
+											for walker_i in range(sampler.get_chain().shape[1])}
+	return samples,'Not returning KDE as it is applied to the reweighted samples so doesnt make sense on its own.'
+
+

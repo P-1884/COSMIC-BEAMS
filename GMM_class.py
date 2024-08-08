@@ -27,6 +27,7 @@ class GMM_class:
             return np.random.normal(loc=self.list_of_mu[component],scale=self.list_of_sigma[component],size=N_samples)
 
     def fit(self,data,n_components=2):
+        print('Not applying any truncation to Gaussian: Use numpyro_truncnorm_GMM_fit for this.')
         GMM_fit =  GMM(n_components=n_components).fit(np.array(data))
         self.list_of_mu = GMM_fit.means_.flatten()
         self.list_of_sigma = np.sqrt(GMM_fit.covariances_.flatten())
