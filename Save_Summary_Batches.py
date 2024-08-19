@@ -95,7 +95,7 @@ def combine_JAX_chains(python_out_file_chain_0,N_chain,exclude_chain_list = []):
     print(python_out_files)
     summary_plots_list = [summary_plots(elem) for elem in python_out_files]
     JAX_chains_list = {}
-    for chain_ii,elem in enumerate(summary_plots_list):
+    for chain_ii,elem in tqdm(enumerate(summary_plots_list)):
         if elem.JAX_chains is not None:
             JAX_chains_list[chain_ii]=(elem.JAX_chains)
         else: 
@@ -118,9 +118,14 @@ try:
     # python_out_files_chain_0 = ['python3.11-delta_z_0.5_0_0-64031.out','python3.11-delta_z_0.5_1_0-64061.out',
     #                             'python3.11-delta_z_0.5_2_0-64091.out','python3.11-delta_z_0.5_3_0-64121.out',
     #                             'python3.11-delta_z_0.5_4_0-64151.out']
-    python_out_files_chain_0 = ['python3.11-delta_z_0.8_0_0-64041.out','python3.11-delta_z_0.8_1_0-64071.out',
-                                'python3.11-delta_z_0.8_2_0-64101.out','python3.11-delta_z_0.8_3_0-64131.out',
-                                'python3.11-delta_z_0.8_4_0-64161.out']
+    # python_out_files_chain_0 = ['python3.11-delta_z_0.8_0_0-64041.out','python3.11-delta_z_0.8_1_0-64071.out',
+    #                             'python3.11-delta_z_0.8_2_0-64101.out','python3.11-delta_z_0.8_3_0-64131.out',
+    #                             'python3.11-delta_z_0.8_4_0-64161.out']
+    python_out_files_chain_0 = ['python3.11-Subbatching_0_0-75609.out','python3.11-Subbatching_2_0-75689.out',
+                                'python3.11-Subbatching_4_0-75769.out','python3.11-Subbatching_6_0-75849.out',
+                                'python3.11-Subbatching_8_0-75930.out','python3.11-Subbatching_1_0-75649.out',
+                                'python3.11-Subbatching_3_0-75729.out','python3.11-Subbatching_5_0-75809.out',
+                                'python3.11-Subbatching_7_0-75889.out','python3.11-Subbatching_9_0-75970.out']
     save_combined_chains = eval(argv[5])
     run_summary_batch=True
     try:
@@ -137,10 +142,20 @@ except Exception as ex:
     run_summary_batch=False
     pass
 
+def drop_extra_columns(db,P_tau=True,zL=True,zS=True,Ok=False,alpha_weights_2=False):
+    columns_to_drop = []
+    if P_tau: columns_to_drop += list(db.filter(regex='P_tau'))
+    if zL: columns_to_drop += list(db.filter(regex='zL'))
+    if zS: columns_to_drop += list(db.filter(regex='zS'))
+    if Ok: columns_to_drop += list(db.filter(regex='Ok'))
+    if alpha_weights_2: columns_to_drop += list(db.filter(regex='alpha_weights_2'))
+    return db[db.columns.drop(columns_to_drop)]
+
+
 class summary_batch():
     def __init__(self,python_out_file_0=None,N_batch=None,
                  exclude_batch_list = [],python_out_files_chain_0 = None, N_chains = None,
-                 exclude_chain_dict = None):
+                 exclude_chain_dict = None,drop_extra_columns_bool=True):
         if N_batch is None: N_batch = len(python_out_files_chain_0)
         self.N_batch = N_batch-len(exclude_batch_list)
         self.python_out_file_0 = python_out_file_0
@@ -162,9 +177,11 @@ class summary_batch():
         else:
             assert python_out_file_0 is None
             self.JAX_chains_list = [];self.db_in_list = []
-            for batch_ii in range(N_batch):
+            for batch_ii in tqdm(range(N_batch)):
                 exclude_chain_list_i = exclude_chain_dict[batch_ii] if exclude_chain_dict is not None else []
                 J_list_i,d_list_i = combine_JAX_chains(python_out_files_chain_0[batch_ii],N_chains,exclude_chain_list = exclude_chain_list_i)
+                if drop_extra_columns_bool:
+                    J_list_i = drop_extra_columns(J_list_i,Ok=True,alpha_weights_2=True)
                 self.JAX_chains_list.append(J_list_i);self.db_in_list.append(d_list_i)
         # self.JAX_chains_list = [summary_plots(elem).JAX_chains for elem in self.python_out_files]
         self.population_hyperparameters = ['OM','Ode','w','wa']+\

@@ -11,7 +11,8 @@ range_dict = {'OM':(0,1),#(0.1,0.3),
             'mu_zL_g_NL':(0,5),'mu_zS_g_NL':(0,5),
             'sigma_zL_g_L':(0,2),'sigma_zS_g_L':(0,2),
             'sigma_zL_g_NL':(0.1,5),'sigma_zS_g_NL':(0.1,5),
-            'zL':(0,1.5),'zS':(0,3),'t':(0,2),'t_mu':(0,2)}
+            'zL':(0,1.5),'zS':(0,3),'t':(0,2),'t_mu':(0,2),
+            }
 label_dict = {'OM':'$\Omega_m$','Ode':'$\Omega_\lambda$','Ok':'$\Omega_k$',
             'w':'$w_0$','wa':'$w_a$','H0':'H0',
             'mu_zL_g_L':'$\mu_{zL|L}$','mu_zL_g_NL':'$\mu_{zL|NL}$',

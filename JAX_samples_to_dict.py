@@ -1,4 +1,5 @@
-def JAX_samples_to_dict(sampler,separate_keys=False,cosmo_type='',wa_const=False,w0_const=False,fixed_GMM=False):
+import numpy as np
+def JAX_samples_to_dict(sampler,separate_keys=False,cosmo_type='',wa_const=False,w0_const=False,fixed_GMM=False,N_sys_per_batch = []):
     key_list = sampler.get_samples().keys()
     sample_dict = {}
     for k_i in key_list:
@@ -6,6 +7,18 @@ def JAX_samples_to_dict(sampler,separate_keys=False,cosmo_type='',wa_const=False
         if not separate_keys: 
             assert sampler.get_samples()[k_i].shape[1]==1 and len(sampler.get_samples()[k_i].shape)==2
             sample_dict[k_i] = sampler.get_samples()[k_i].T[0]
+        if len(N_sys_per_batch)>0:
+            if ('zL' in k_i) or ('zS' in k_i):
+                batch_n = int(k_i.split('_B')[-1])
+                if batch_n>0: continue #Don't save any of the later batches
+                assert k_i == f'{k_i.split("_B")[0]}_B{batch_n}'
+                for c_i in range(sampler.get_samples(True)[k_i].shape[0]): #chain, N_steps, 1, N_sys_per_batch
+                    key_label = k_i.split('_B')[0]
+                    for z_i in range(sampler.get_samples(True)[k_i].shape[-1]):
+                        if (key_label!='P_tau') and z_i>=100: continue
+                        if (key_label=='P_tau') and z_i>=2000: continue
+                        n_z_i = int(z_i + np.sum(N_sys_per_batch[:batch_n])) #System number, starting at 0 for first batch, and for later batches starting at the number of previous systems in earlier batches. Batch number starts at 0.
+                        sample_dict[f'{key_label}_{n_z_i}_{c_i}'] = sampler.get_samples(True)[k_i][c_i,:,0,z_i]
         else: 
             print(k_i,sampler.get_samples(True)[k_i].shape)
             if k_i not in ['Ok','zL','zS']: 
@@ -22,7 +35,7 @@ def JAX_samples_to_dict(sampler,separate_keys=False,cosmo_type='',wa_const=False
                         print('Saved shape 1:',k_i,c_i,sampler.get_samples(True)[k_i][c_i,:,0].shape)
                     #May require this if using photometric redshifts
                     else:
-                        #print('Shape 2.0:',sampler.get_samples(True)[k_i].shape) #(2, 100, 1, 2048)
+                        #print('Shape 2.0:',sampler.get_samples(True)[k_i].shape) #(2, 100, 1, 2048) #chain, N_steps, 1, N_sys
                         for z_i in range(sampler.get_samples(True)[k_i].shape[-1]):
                             if z_i>=100 and k_i!='P_tau': 
                                 print(f'Skipping {k_i}_{z_i}_{c_i}')

@@ -25,6 +25,7 @@ import time
 from jax.scipy.stats import truncnorm as jax_truncnorm
 from Beta_Distribution_Class import beta_class
 from LogNormal_Distribution_Class import jax_lognormal 
+import gc
 
 class truncnorm_class:
     def __init__(self,loc,scale,a,b):
@@ -74,13 +75,23 @@ def breakpoint_if_nonfinite_0(prob,alpha_mu,alpha_scale,alpha_s,r_theory,r_theor
     jax.debug.breakpoint()
   jax.lax.cond(is_finite, true_fn, false_fn, prob,alpha_mu,alpha_scale,alpha_s,r_theory,r_theory_2)
 
-def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2=[np.nan],P_tau_0 = [],cosmo_type='',
+def j_likelihood_SL_batch(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2=[np.nan],P_tau_0 = [],cosmo_type='',
                     photometric=False,contaminated=False,H0=np.nan,key=None,
                     likelihood_check=False,likelihood_dict = {},cov_redshift=False,early_return=False,
                     batch_bool=True, wa_const = False, w0_const = False,GMM_zL = False,GMM_zS = False,
                     fixed_GMM = False, GMM_zL_dict = {}, GMM_zS_dict = {},spec_indx = [],no_parent=False,
                     trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False,
-                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False):
+                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False,
+                    prior_dict = {},batch_number=np.nan
+                    ):
+    #Other permutations haven't yet been tested:
+    assert photometric and contaminated and lognorm_parent
+    assert GMM_zL==False and GMM_zS==False
+    assert not fixed_GMM and not cov_redshift
+    OM = prior_dict['OM'];Ok = prior_dict['Ok'];Ode = prior_dict['Ode'];w = prior_dict['w'];wa = prior_dict['wa']
+    s_m = prior_dict['s_m'];s_c = prior_dict['s_c'];scale_m = prior_dict['scale_m'];scale_c = prior_dict['scale_c']
+    alpha_mu_dict = prior_dict['alpha_mu_dict'];alpha_scale_dict = prior_dict['alpha_scale_dict']
+    simplex_sample = prior_dict['simplex_sample']
     '''
     Main input args:
     zL_obs: Observed lens redshift
@@ -136,31 +147,15 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             zL_obs_low_lim = jnp.array(zL_obs-4*zL_sigma)
             zL_obs_low_lim = zL_obs_low_lim*(zL_obs_low_lim>0) #Minimum value is 0
             zL_obs_up_lim = jnp.array(zL_obs+4*zL_sigma)
-            zL = numpyro.sample('zL',dist.Uniform(low = zL_obs_low_lim,high = zL_obs_up_lim),sample_shape=(1,),rng_key=key).flatten()
+            zL = numpyro.sample(f'zL_B{batch_number}',dist.Uniform(low = zL_obs_low_lim,high = zL_obs_up_lim),sample_shape=(1,),rng_key=key).flatten()
             ##Minimum value is zL. First term: zS if zS>0, else 0. Second term, zL if zS<zL, else 0
             zS_obs_low_lim = jnp.array(zS_obs-5*zS_sigma)
             zS_obs_low_lim = zS_obs_low_lim*(zS_obs_low_lim>zL) + zL*(zS_obs_low_lim<zL)
             zS_obs_low_lim = zS_obs_low_lim*(zS_obs_low_lim>0)
             zS_obs_up_lim = jnp.array(zS_obs+5*zS_sigma)
-            zS = numpyro.sample('zS',dist.Uniform(low = zS_obs_low_lim, high = zS_obs_up_lim),sample_shape=(1,),rng_key=key).flatten()
+            zS = numpyro.sample(f'zS_B{batch_number}',dist.Uniform(low = zS_obs_low_lim, high = zS_obs_up_lim),sample_shape=(1,),rng_key=key).flatten()
             #
             # Assumes a lognormal relation for P(zS|zL), with a linear dependence of the lognormal hyperparameters on redshift:
-            if lognorm_parent:
-                if true_zL_zS_dep:
-                    print('Using true P(zL|zS) dependence in likelihood')
-                    s_m = -0.22745602 
-                    s_c =  0.61472073
-                    scale_m = 1.15897213 
-                    scale_c = 0.89219335
-                else:
-                    #These MUST be uniform distributions if using kde to combine batches of posteriors:
-                    s_m = jnp.squeeze(numpyro.sample("s_m", dist.Uniform(-1,0),sample_shape=(1,),rng_key=key)) #-0.2
-                    #These MUST be uniform distributions if using kde to combine batches of posteriors:
-                    s_c = jnp.squeeze(numpyro.sample("s_c", dist.Uniform(0.01,2),sample_shape=(1,),rng_key=key)) #0.6
-                    #These MUST be uniform distributions if using kde to combine batches of posteriors:
-                    scale_m = jnp.squeeze(numpyro.sample("scale_m", dist.Uniform(0,6),sample_shape=(1,),rng_key=key)) #1.0
-                    #These MUST be uniform distributions if using kde to combine batches of posteriors:
-                    scale_c =  jnp.squeeze(numpyro.sample("scale_c", dist.Uniform(0.1,5),sample_shape=(1,),rng_key=key)) #1.0
             if not no_parent:
                 if GMM_zL:
                     if fixed_GMM:
@@ -208,43 +203,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             print('Assuming spectroscopic redshifts')
             zL = zL_obs #Think still need to have an error-budget when using spectroscopic redshifts?
             zS = zS_obs
-        # Prior on Omega_M:
-        OM = jnp.squeeze(numpyro.sample("OM", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
-        if cosmo_type in ['FlatLambdaCDM','FlatwCDM']:
-            #Don't care about Ode, as it isn't an argument for the cosmology (OM and Ok are instead)
-            print('Assuming a flat universe')
-            Ok = numpyro.deterministic('Ok',0.0)
-            Ode = numpyro.deterministic('Ode',1-(OM+Ok))
-        else:
-            print('Assuming the universe may have curvature')
-            # OLD: Sampling OM and Ok uniformly. Ode is therefore sampled from a weird shaped distribution in the range (-1,2), but
-            # # which is uniform in the range (0,1)
-            # # This can therefore be cropped to a uniform distribution by setting the likelihood to -np.inf if Ode is outside of (0,1).
-            # Ok = jnp.squeeze(numpyro.sample("Ok", dist.Uniform(-1,1),sample_shape=(1,),rng_key=key))
-            # Ode = numpyro.deterministic('Ode',1-(OM+Ok))
-            #Now just sampling Ode uniformly, and then setting Ok to 1-(OM+Ode):
-            # Prior on Omega_lambda:
-            Ode = jnp.squeeze(numpyro.sample("Ode", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
-            Ok = numpyro.deterministic('Ok',1-(OM+Ode))
-        if cosmo_type in ['LambdaCDM','FlatLambdaCDM']:
-            print('Assuming universe has a cosmological constant')
-            # Prior on w0:
-            w = numpyro.deterministic('w',-1.0)
-            # Prior on wa:
-            wa = numpyro.deterministic('wa',0.0)
-        elif wa_const == True and w0_const == False:
-            print('Assuming a non-evolving dark energy equation of state')
-            w = jnp.squeeze(numpyro.sample("w", dist.Uniform(-6,4),sample_shape=(1,),rng_key=key)) #Physicality constraints, (-6,4)
-            wa = numpyro.deterministic('wa',0.0)
-        elif wa_const == False and w0_const == True:
-            print('Assuming an evolving dark energy equation of state, but with w0 fixed at -1.')
-            w = numpyro.deterministic('w',-1.0)
-            wa = jnp.squeeze(numpyro.sample("wa", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) #Matching Tian's constraints for now
-        else:
-            print('Assuming non-trivial dark energy equation of state')
-            w = jnp.squeeze(numpyro.sample("w", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) # Adding tighter constraints for now. Previously Physicality constraints, (-6,4)
-            wa = jnp.squeeze(numpyro.sample("wa", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) #Matching Tian's constraints for now
-    if likelihood_check: # For bug-checking purposes:
+        if likelihood_check: # For bug-checking purposes:
             OM = likelihood_dict['OM'];Ok = likelihood_dict['Ok']
             Ode = numpyro.deterministic('Ode',1-(OM+Ok))
             w = likelihood_dict['w'];wa=likelihood_dict['wa'];
@@ -267,14 +226,14 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
     # Calculating the theoretical 'r' ratio for given lens/source redshifts and cosmology:
     if cosmo_type in ['FlatLambdaCDM','FlatwCDM']: r_theory = j_r_SL_flat(zL,zS,cosmo)
     else: r_theory = j_r_SL(zL,zS,cosmo)
-    if early_return: return
+    if early_return: return 0
     # If contaminated, need to know the prior probability each system is a lens (P_tau_0):
     if contaminated:
         if P_tau_dist: # Uses a distribution for P_tau, with mean P_tau_0 and width sigma_P_tau, rather than a single value:
             Beta_class_instance = beta_class(mean=P_tau_0,sigma=sigma_P_tau)
             beta_A = Beta_class_instance.A
             beta_B = Beta_class_instance.B
-            P_tau = numpyro.sample('P_tau',dist.Beta(beta_A,beta_B),sample_shape = (1,),rng_key=key).flatten()
+            P_tau = numpyro.sample(f'P_tau_B{batch_number}',dist.Beta(beta_A,beta_B),sample_shape = (1,),rng_key=key).flatten()
         else:
             P_tau = P_tau_0
         P_tau = P_tau.astype('float') #Needs to be a float for dist.Categorical to work
@@ -540,10 +499,6 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
         # alpha_mu_2 = jnp.squeeze(numpyro.sample("alpha_mu_2", dist.Uniform(0,2),sample_shape=(1,),rng_key=key))
         # alpha_scale_2 = jnp.squeeze(numpyro.sample("alpha_scale_2", dist.Uniform(0.01,5),sample_shape=(1,),rng_key=key))
         # alpha_w = jnp.squeeze(numpyro.sample("alpha_w", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
-        N_comp = 3
-        alpha_mu_dict = {elem:numpyro.sample(f'alpha_mu_{elem}',dist.Uniform(0,2),sample_shape=(1,)) for elem in range(N_comp)}
-        alpha_scale_dict = {elem:numpyro.sample(f'alpha_scale_{elem}',dist.LogUniform(0.01,5),sample_shape=(1,)) for elem in range(N_comp)}
-        simplex_sample = numpyro.sample('alpha_weights',dist.Dirichlet(concentration=jnp.array([1.0]*N_comp)))
         def photometric_and_contaminated_likelihood(r_obs,sigma_r_obs,r_theory,
                                             # r_obs_spec,sigma_r_obs_spec,r_theory_spec, NOT Implemented yet
                                             zL_obs,zS_obs,
@@ -690,7 +645,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                                             sigma_01_g_L=sigma_01_g_L,sigma_10_g_L=sigma_10_g_L,
                                             sigma_01_g_NL=sigma_01_g_NL,sigma_10_g_NL=sigma_10_g_NL)
         if likelihood_check: return prob
-        L = numpyro.factor("Likelihood",prob)
+        return prob
     else:
         print('Assuming not contaminated, with spectroscopic redshifts')
         assert not photometric and not contaminated
@@ -721,7 +676,93 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                 prob = jnp.where(Ode>1,-np.inf,prob) 
                 numpyro.factor('Likelihood',prob)    
         # numpyro.sample("r", dist.Normal(r_theory, sigma_r_obs), obs=r_obs)
- 
+
+def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,sigma_r_obs_2=[np.nan],P_tau_0 = [],cosmo_type='',
+                    photometric=False,contaminated=False,H0=np.nan,key=None,
+                    likelihood_check=False,likelihood_dict = {},cov_redshift=False,early_return=False,
+                    batch_bool=True, wa_const = False, w0_const = False,GMM_zL = False,GMM_zS = False,
+                    fixed_GMM = False, GMM_zL_dict = {}, GMM_zS_dict = {},spec_indx = [],no_parent=False,
+                    trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False,
+                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False,batch_indx_array=[]
+                    ):
+    
+    N_batch = len(batch_indx_array)
+    prior_dict = {'OM':None,'Ode':None,'Ok':None,'w':None,'wa':None,'s_m':None,'s_c':None,'scale_m':None,'scale_c':None,
+                  'alpha_mu_dict':None,'alpha_scale_dict':None,'simplex_sample':None}
+    # Prior on Omega_M:
+    OM = jnp.squeeze(numpyro.sample("OM", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
+    if cosmo_type in ['FlatLambdaCDM','FlatwCDM']:
+        #Don't care about Ode, as it isn't an argument for the cosmology (OM and Ok are instead)
+        print('Assuming a flat universe')
+        Ok = numpyro.deterministic('Ok',0.0)
+        Ode = numpyro.deterministic('Ode',1-(OM+Ok))
+    else:
+        print('Assuming the universe may have curvature')
+        # Prior on Omega_lambda:
+        Ode = jnp.squeeze(numpyro.sample("Ode", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
+        Ok = numpyro.deterministic('Ok',1-(OM+Ode))
+    if cosmo_type in ['LambdaCDM','FlatLambdaCDM']:
+        print('Assuming universe has a cosmological constant')
+        # Prior on w0:
+        w = numpyro.deterministic('w',-1.0)
+        # Prior on wa:
+        wa = numpyro.deterministic('wa',0.0)
+    elif wa_const == True and w0_const == False:
+        print('Assuming a non-evolving dark energy equation of state')
+        w = jnp.squeeze(numpyro.sample("w", dist.Uniform(-6,4),sample_shape=(1,),rng_key=key)) #Physicality constraints, (-6,4)
+        wa = numpyro.deterministic('wa',0.0)
+    elif wa_const == False and w0_const == True:
+        print('Assuming an evolving dark energy equation of state, but with w0 fixed at -1.')
+        w = numpyro.deterministic('w',-1.0)
+        wa = jnp.squeeze(numpyro.sample("wa", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) #Matching Tian's constraints for now
+    else:
+        print('Assuming non-trivial dark energy equation of state')
+        w = jnp.squeeze(numpyro.sample("w", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) # Adding tighter constraints for now. Previously Physicality constraints, (-6,4)
+        wa = jnp.squeeze(numpyro.sample("wa", dist.Uniform(-3,1),sample_shape=(1,),rng_key=key)) #Matching Tian's constraints for now
+    if lognorm_parent:
+        if true_zL_zS_dep:
+            print('Using true P(zL|zS) dependence in likelihood')
+            s_m = -0.22745602;s_c =  0.61472073
+            scale_m = 1.15897213;scale_c = 0.89219335
+        else:
+            #These MUST be uniform distributions if using kde to combine batches of posteriors:
+            s_m = jnp.squeeze(numpyro.sample("s_m", dist.Uniform(-1,0),sample_shape=(1,),rng_key=key)) #-0.2
+            #These MUST be uniform distributions if using kde to combine batches of posteriors:
+            s_c = jnp.squeeze(numpyro.sample("s_c", dist.Uniform(0.01,2),sample_shape=(1,),rng_key=key)) #0.6
+            #These MUST be uniform distributions if using kde to combine batches of posteriors:
+            scale_m = jnp.squeeze(numpyro.sample("scale_m", dist.Uniform(0,6),sample_shape=(1,),rng_key=key)) #1.0
+            #These MUST be uniform distributions if using kde to combine batches of posteriors:
+            scale_c =  jnp.squeeze(numpyro.sample("scale_c", dist.Uniform(0.1,5),sample_shape=(1,),rng_key=key)) #1.0
+    N_comp = 3
+    alpha_mu_dict = {elem:numpyro.sample(f'alpha_mu_{elem}',dist.Uniform(0,2),sample_shape=(1,),rng_key=key) for elem in range(N_comp)}
+    alpha_scale_dict = {elem:numpyro.sample(f'alpha_scale_{elem}',dist.LogUniform(0.01,5),sample_shape=(1,),rng_key=key) for elem in range(N_comp)}
+    simplex_sample = numpyro.sample('alpha_weights',dist.Dirichlet(concentration=jnp.array([1.0]*N_comp)),rng_key=key)
+    #
+    prior_dict = {'OM':OM,'Ode':Ode,'Ok':Ok,'w':w,'wa':wa,'s_m':s_m,'s_c':s_c,'scale_m':scale_m,'scale_c':scale_c,
+                  'alpha_mu_dict':alpha_mu_dict,'alpha_scale_dict':alpha_scale_dict,'simplex_sample':simplex_sample}
+    total_prob = 0
+    for batch_number in range(N_batch):
+        batch_indx_i = batch_indx_array[batch_number]
+        batch_prob_i = j_likelihood_SL_batch(
+                    zL_obs[batch_indx_i],zS_obs[batch_indx_i],
+                    sigma_zL_obs[batch_indx_i],sigma_zS_obs[batch_indx_i],
+                    r_obs[batch_indx_i],sigma_r_obs[batch_indx_i],
+                    sigma_r_obs_2=[sigma_r_obs_2],
+                    P_tau_0 = P_tau_0[batch_indx_i],cosmo_type=cosmo_type,
+                    photometric=photometric,contaminated=contaminated,H0=H0,key=key,
+                    likelihood_check=likelihood_check,likelihood_dict = likelihood_dict,cov_redshift=cov_redshift,early_return=early_return,
+                    batch_bool=batch_bool, wa_const = wa_const, w0_const = w0_const,GMM_zL = GMM_zL,GMM_zS = GMM_zS,
+                    fixed_GMM = fixed_GMM, GMM_zL_dict = GMM_zL_dict, GMM_zS_dict = GMM_zS_dict,spec_indx = spec_indx,no_parent=no_parent,
+                    trunc_zL=trunc_zL,trunc_zS=trunc_zS,P_tau_dist = P_tau_dist,
+                    sigma_P_tau = sigma_P_tau[batch_indx_i],
+                    lognorm_parent = lognorm_parent,
+                    unimodal_beta=unimodal_beta,bimodal_beta=bimodal_beta,true_zL_zS_dep = true_zL_zS_dep,
+                    prior_dict = prior_dict,batch_number=batch_number)
+        total_prob += jnp.sum(batch_prob_i)
+        del batch_prob_i
+        gc.collect()
+    L = numpyro.factor("Likelihood",total_prob)
+
 # Code to run the cosmology posterior sampling:
 def run_MCMC(photometric,contaminated,cosmo_type,
             zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,
@@ -733,8 +774,10 @@ def run_MCMC(photometric,contaminated,cosmo_type,
             no_parent=False,initialise_to_truth=False,trunc_zL=False,trunc_zS=False,
             P_tau_dist=False,sigma_P_tau = None,lognorm_parent=False,
             r_true = None,unimodal_beta=True,bimodal_beta=False,
-            true_zL_zS_dep=False):
+            true_zL_zS_dep=False,N_batch=1):
     print('Random key:',key_int)
+    # jax.profiler.start_trace("./memory_profiling")
+    batch_indx_array = jnp.array_split(jnp.arange(len(zL_obs)),N_batch)
     if unimodal_beta:
         print('USING MAXIMUM (AND POSSIBLY VARYING) SIGMA_P_TAU POSSIBLE')
         sigma_P_tau = beta_class().max_sigma_for_unimodal_beta(P_tau_0)
@@ -751,13 +794,15 @@ def run_MCMC(photometric,contaminated,cosmo_type,
                 'GMM_zL_dict':GMM_zL_dict,'GMM_zS_dict':GMM_zS_dict,'fixed_GMM':fixed_GMM,
                 'no_parent':no_parent,'trunc_zL':trunc_zL,'trunc_zS':trunc_zS,
                 'P_tau_dist':P_tau_dist,'sigma_P_tau':sigma_P_tau,'lognorm_parent':lognorm_parent,
-                'unimodal_beta':unimodal_beta,'bimodal_beta':bimodal_beta,'true_zL_zS_dep':true_zL_zS_dep}
+                'unimodal_beta':unimodal_beta,'bimodal_beta':bimodal_beta,'true_zL_zS_dep':true_zL_zS_dep,
+                'batch_indx_array':batch_indx_array}
     print(f'Model args: {model_args}')
     key = jax.random.PRNGKey(key_int)
     print(f'Target Accept Prob: {target_accept_prob}')
     print(f'Batch bool: {batch_bool}')
     st = time.time()
     j_likelihood_SL(**model_args,key=key,early_return=True)
+    # return
     mt=time.time()
     j_likelihood_SL(**model_args,key=key,early_return=True)
     et=time.time()
@@ -796,14 +841,17 @@ def run_MCMC(photometric,contaminated,cosmo_type,
     print('Starting Warmup:')
     sampler_0.warmup(key,**model_args,collect_warmup=True)
     ##
-    warmup_dict = JAX_samples_to_dict(sampler_0,separate_keys=True,cosmo_type=cosmo_type,wa_const=wa_const,w0_const=w0_const,fixed_GMM=fixed_GMM)
+    warmup_dict = JAX_samples_to_dict(sampler_0,separate_keys=True,cosmo_type=cosmo_type,wa_const=wa_const,w0_const=w0_const,
+                                      fixed_GMM=fixed_GMM,N_sys_per_batch=[len(batch_indx_array[elem]) for elem in range(N_batch)])
     db_JAX_warmup = pd.DataFrame(warmup_dict)
     db_JAX_warmup.to_csv(warmup_file,index=False)
     print(f'Saved warmup to {warmup_file}')
     ##
     print("Starting main run:")
     sampler_0.run(key,**model_args,key=None)
-    return sampler_0
+    print('Finished main run')
+    # jax.profiler.stop_trace()
+    return sampler_0,[len(batch_indx_array[elem]) for elem in range(N_batch)]
     # Without HMCECS:
     # sampler_0 = infer.MCMC(
     #     infer.NUTS(model = j_likelihood_SL,
@@ -812,8 +860,6 @@ def run_MCMC(photometric,contaminated,cosmo_type,
     #     num_samples=num_samples,
     #     num_chains=num_chains,
     #     progress_bar=True)
-    return sampler_0
-
 '''
 A note about the cosmology checks: Need to check if some of the values I am checking are physical (e.g. can Ode be >1?). If not, then
 its not really a problem that it fails these checks. 
@@ -846,3 +892,12 @@ def Omega_k_check():
         if line_0_ii=='def cosmo_check():' and (line_0_ii==line_f_ii): break
 
 Omega_k_check() #Do not remove this!
+
+
+'''
+addqueue -q cmbgpu --gpus 4 --gputype rtx3090with24gb -m 59 /mnt/users/hollowayp/python114_archive/bin/python3.11 ./run_zBEAMS_JAX.py --filein ./databases/real_paltas_population_TP_100000_FP_100000_Spec_10000_P_0.5_extrem.csv  --c True --p True --cosmo wCDM --num_chains 1 --target 0.99 --num_samples 10 --num_warmup 10 --no_parent --batch False  --P_tau_dist --sigma_P_tau 0.2 --no_parent --trunc_zS --trunc_zL --lognorm_parent --bimodal_beta False --unimodal_beta True --key 0 --batch_version --N_batch 10
+
+Works for 100k (not OOM at least): - DO NOT EDIT.
+addqueue -q cmbgpu --gpus 4 --gputype rtx3090with24gb -m 59 /mnt/users/hollowayp/python114_archive/bin/python3.11 ./run_zBEAMS_JAX.py --filein ./databases/real_paltas_population_TP_100000_FP_100000_Spec_10000_P_0.5_extrem.csv  --c True --p True --cosmo wCDM --num_chains 1 --target 0.99 --num_samples 10 --num_warmup 10 --no_parent --batch False  --P_tau_dist --sigma_P_tau 0.2 --no_parent --trunc_zS --trunc_zL --lognorm_parent --bimodal_beta False --unimodal_beta True --key 0 --batch_version --N_batch 10
+'''
+

@@ -12,6 +12,7 @@ import time
 import glob
 import numpy as np
 from convert_ipynb_to_py import save_notebook_as_python_file 
+
 # Saves code each time it is run:
 N_code_backups = np.max([len(glob.glob('./code_backups/mcmcfunctions_SL_JAX*')),
                          len(glob.glob('./code_backups/zBEAMS_Application_to_Strong_Lensing.py*'))])
@@ -64,12 +65,15 @@ def argument_parser():
     # Whether to use truncated gaussian distribution for source redshifts:
     parser.add_argument('--trunc_zS',action='store_true',help='Optional argument truncate zS in the likelihood')
     parser.add_argument('--archive',action='store_true',help='Use archive version of likelihood function, from Github')
+    parser.add_argument('--batch_version',action='store_true',help='Use batch version of likelihood function')
+    parser.add_argument('--N_batch',type=int, default=1, help='Optional argument - how many batches to use, when batch_version==True')
     parser.add_argument('--P_tau_dist',action='store_true',help='Use a distribution for P_tau')
     parser.add_argument('--sigma_P_tau',type=float, default=0.1, help='Sigma for P_tau distribution')
     parser.add_argument('--lognorm_parent',action='store_true',help='Use a lognormal distribution for the parent')
     parser.add_argument('--unimodal_beta', dest='unimodal_beta', type=lambda x:bool(distutils.util.strtobool(x)),default=True)
     parser.add_argument('--bimodal_beta', dest='bimodal_beta', type=lambda x:bool(distutils.util.strtobool(x)),default=False)
     parser.add_argument('--true_zL_zS_dep',action='store_true',help='Use true P(zL|zS) relation in the likelihood')
+    parser.add_argument('--memory_check',action='store_true',help='Print help')
     args = parser.parse_args()
     return args
 
@@ -103,6 +107,10 @@ lognorm_parent = argv.lognorm_parent
 unimodal_beta = argv.unimodal_beta
 bimodal_beta = argv.bimodal_beta
 true_zL_zS_dep = argv.true_zL_zS_dep
+batch_version = argv.batch_version
+N_batch = argv.N_batch
+memory_check = argv.memory_check
+
 assert not (unimodal_beta and bimodal_beta) #Can't have both as True.
 import sys
 
@@ -128,6 +136,14 @@ if archive:
         os.environ['JAX_PLATFORMS'] = 'cpu'
         from mcmcfunctions_SL_JAX_archive import j_likelihood_SL,run_MCMC
     print('RUNNING ARCHIVE VERSION')
+if batch_version:
+    try:
+        from mcmcfunctions_SL_JAX_batch import j_likelihood_SL,run_MCMC
+    except:
+        print('FAILED TO FIND A GPU. DEFAULTING TO USING A CPU.')
+        os.environ['JAX_PLATFORMS'] = 'cpu'
+        from mcmcfunctions_SL_JAX_batch import j_likelihood_SL,run_MCMC
+    print('RUNNING BATCH VERSION')
 else:
     try:
         from mcmcfunctions_SL_JAX import j_likelihood_SL,run_MCMC
@@ -210,9 +226,8 @@ print(f'Will be saving file to: {fileout}')
 
 if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.
 
-if archive:
-    additional_args={}
-else:
+additional_args = {}
+if not archive:
     additional_args = {'GMM_zL_dict':GMM_zL_dict,
                     'GMM_zS_dict':GMM_zS_dict,
                     'fixed_GMM':fixed_GMM,
@@ -230,6 +245,8 @@ else:
                     'unimodal_beta':unimodal_beta,
                     'bimodal_beta':bimodal_beta,
                     'true_zL_zS_dep':true_zL_zS_dep}
+if batch_version:
+    additional_args['N_batch'] = N_batch
 
 sampler_S = run_MCMC(photometric = photometric,
                     contaminated = contaminated,
@@ -257,8 +274,12 @@ sampler_S = run_MCMC(photometric = photometric,
                     GMM_zS=GMM_zS,
                     **additional_args)
 
+if batch_version:
+    sampler_S,N_sys_per_batch = sampler_S
+else: N_sys_per_batch = []
 # Saves JAX chains to a pandas DataFrame:
-a=JAX_samples_to_dict(sampler_S,separate_keys=True,cosmo_type=cosmo_type,wa_const=wa_const,w0_const=w0_const,fixed_GMM=fixed_GMM)
+a=JAX_samples_to_dict(sampler_S,separate_keys=True,cosmo_type=cosmo_type,wa_const=wa_const,w0_const=w0_const,fixed_GMM=fixed_GMM,
+                      N_sys_per_batch = N_sys_per_batch)
 db_JAX = pd.DataFrame(a)
 db_JAX.to_csv(fileout,index=False)
 print('File search:',file_search)

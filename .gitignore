@@ -21,3 +21,7 @@ code_backups/*
 *./*.png
 *.png
 *.db
+./.vs_code_python114_archive_zBEAMS/*
+*vs_code_python114_archive_zBEAMS*
+./memory_profiling/*
+memory_profiling/*
