@@ -155,15 +155,17 @@ def drop_extra_columns(db,P_tau=True,zL=True,zS=True,Ok=False,alpha_weights_2=Fa
 class summary_batch():
     def __init__(self,python_out_file_0=None,N_batch=None,
                  exclude_batch_list = [],python_out_files_chain_0 = None, N_chains = None,
-                 exclude_chain_dict = None,drop_extra_columns_bool=True):
+                 exclude_chain_dict = None,drop_extra_columns_bool=True,python_out_files=None):
         if N_batch is None: N_batch = len(python_out_files_chain_0)
         self.N_batch = N_batch-len(exclude_batch_list)
         self.python_out_file_0 = python_out_file_0
         if python_out_files_chain_0 is None:
-            out_file_n0 = python_out_file_0.split('-')[-1].replace('.out','')
-            prefix = python_out_file_0.split(out_file_n0)[0]
-            affix = python_out_file_0.split(out_file_n0)[1]
-            self.python_out_files = [f'{prefix}{int(out_file_n0)+i}{affix}' for i in list(set(np.arange(N_batch))-set(exclude_batch_list))]
+            if python_out_files is None:
+                out_file_n0 = python_out_file_0.split('-')[-1].replace('.out','')
+                prefix = python_out_file_0.split(out_file_n0)[0]
+                affix = python_out_file_0.split(out_file_n0)[1]
+                self.python_out_files = [f'{prefix}{int(out_file_n0)+i}{affix}' for i in list(set(np.arange(N_batch))-set(exclude_batch_list))]
+            else: self.python_out_files = python_out_files
             # print(self.python_out_files)
             summary_plots_list = [summary_plots(elem) for elem in self.python_out_files]
             self.JAX_chains_list = []
@@ -232,8 +234,8 @@ class summary_batch():
             ax_i.tick_params(labelsize=15)
         pl.tight_layout()
         pl.show()
-    def plot_inferred_alpha(self,burnin=0,burnout=np.nan):
-        hist_dict = {'bins':np.linspace(0,2,41),'density':True,'edgecolor':'k','alpha':0.5}
+    def plot_inferred_alpha(self,burnin=0,burnout=np.nan,binmax=2):
+        hist_dict = {'bins':np.linspace(0,binmax,41),'density':True,'edgecolor':'k','alpha':0.5}
         color_list = pl.rcParams['axes.prop_cycle'].by_key()['color']
         N_comp = len(squash_walkers(self.JAX_chains_list[0]).filter(like='alpha_weight',axis=1).columns)
         for batch_i in range(self.N_batch):
@@ -243,13 +245,15 @@ class summary_batch():
             color_i = color_list[batch_i]
             ax.hist(db_in_i['r_obs_contam'][db_in_i['FP_bool']==1],
                     label='$r_{obs}$ (FP Only)',color='darkred',**hist_dict)
-            ax.hist(db_in_i['r_obs_contam'],label='$r_{obs}$ (All)',**hist_dict)
+            ax.hist(db_in_i['r_obs_contam'][db_in_i['FP_bool']==0],
+                    label='$r_{obs}$ (TP Only)',color='darkgreen',**hist_dict)
+            ax.hist(db_in_i['r_obs_contam'],label='$r_{obs}$ (All)',**hist_dict,fill=False)
             ax.legend([])
             GMM_truncnorm_best_fit = numpyro_truncnorm_GMM_fit(db_in_i['r_obs_contam'][db_in_i['FP_bool']==1].to_numpy(),
                                                             N_comp=3)
             for k_i in GMM_truncnorm_best_fit.keys():
                 GMM_truncnorm_best_fit[k_i] = [float(GMM_truncnorm_best_fit[k_i][ii]) for ii in range(len(GMM_truncnorm_best_fit[k_i]))]
-            GMM_class(**GMM_truncnorm_best_fit).plot(trunc_at_zero=True,X_plot=np.linspace(0,2,1001),ax=ax,
+            GMM_class(**GMM_truncnorm_best_fit).plot(trunc_at_zero=True,X_plot=np.linspace(0,binmax,1001),ax=ax,
                                                     plot_components=False,total_color=color_i)
             burnout_i = np.nanmax([burnout,len(JAX_chains_i)-1])
             for ii in np.linspace(burnin,burnout_i,40,dtype=int):
@@ -257,7 +261,7 @@ class summary_batch():
                     'list_of_sigma':[JAX_chains_i[f'alpha_scale_{comp_ii}'].loc[ii] for comp_ii in range(N_comp)],
                     'list_of_weights':[JAX_chains_i[f'alpha_weights_{comp_iii}'].loc[ii] for comp_iii in range(N_comp)]}
                 GMM_class(**GMM_dict,
-                    ).plot(trunc_at_zero=True,X_plot=np.linspace(0,2,1001),
+                    ).plot(trunc_at_zero=True,X_plot=np.linspace(0,binmax,1001),
                     label_components=False,ax = ax,alpha=0.1,label='_nolegend_',plot_components=False,
                     total_color=color_i)
             ax.set_xlabel('$r_{obs} = \\frac{c^2}{4\pi}\cdot\\frac{\\theta_E}{\\sigma_v^2}$',fontsize=15)
@@ -299,12 +303,12 @@ class summary_batch():
                 ax_i.tick_params(labelsize=15)
         # pl.tight_layout()
         pl.show()
-    def redshift_bias(self,fractional_scatter=False):
+    def redshift_bias(self,burnin=0,fractional_scatter=False):
         color_list = pl.rcParams['axes.prop_cycle'].by_key()['color']
         fig,ax = pl.subplots(1,3,figsize=(15,5))
         Bias_dict = {'zL':[],'zS':[]}
         for batch_i in range(self.N_batch):
-            JAX_chains_i = self.JAX_chains_list[batch_i]
+            JAX_chains_i = self.JAX_chains_list[batch_i].loc[burnin:]
             db_in_i = self.db_in_list[batch_i]
             TP_indx = np.where(db_in_i['FP_bool']==0)[0]
             TP_indx = TP_indx[TP_indx<100] #Only select first 100, i.e. the ones which were saved to csv
@@ -357,7 +361,7 @@ class summary_batch():
         ax.set_title('Prior Lens Probability',fontsize=18)
         pl.tight_layout()
         pl.show()
-    def P_tau_posterior_plots(self,burnin_single = 0,only_extrem_P = False,burnout_single=None):
+    def P_tau_posterior_plots(self,burnin_single = 0,only_central_P = False,burnout_single=None,stacked=True):
         for batch_i in range(self.N_batch):
             JAX_chains_i = self.JAX_chains_list[batch_i]
             db_in_i = self.db_in_list[batch_i]
@@ -379,7 +383,7 @@ class summary_batch():
             JAX_chains_i = self.JAX_chains_list[batch_i]
             db_in_i = self.db_in_list[batch_i]
             for sys_i in range(2000):
-                if only_extrem_P: 
+                if only_central_P: 
                     if db_in_i['P_tau'][sys_i]<0.2 or db_in_i['P_tau'][sys_i]>0.8: continue
                 d_P_tau_i = np.mean(JAX_chains_i.loc[burnin_single:burnout_single][f'P_tau_{sys_i}_0'])-db_in_i['P_tau'][sys_i]
                 ax_0.errorbar(sys_i,d_P_tau_i,
@@ -403,9 +407,15 @@ class summary_batch():
         bin_extrem = np.max([abs(np.floor(np.min(d_P_tau_list*100))/100),
                             abs(np.ceil(np.max(d_P_tau_list*100))/100)]) #Rounding down to 2dp
         fig,ax = pl.subplots()
-        ax.hist([d_P_tau_list_TP,d_P_tau_list_FP],
+        if stacked:
+            ax.hist([d_P_tau_list_TP,d_P_tau_list_FP],
                 bins=np.arange(-bin_extrem,bin_extrem,0.01),density=True,edgecolor='k',alpha=0.5,
-                stacked=True,color = ['green','red'])
+                stacked=stacked,color = ['green','red'])
+        else:
+            for p_i in range(2):
+                ax.hist([d_P_tau_list_TP,d_P_tau_list_FP][p_i],
+                bins=np.arange(-bin_extrem,bin_extrem,0.01),density=True,edgecolor='k',alpha=0.5,
+                stacked=stacked,color = ['green','red'][p_i])
         ax.set_xlabel('Change in Lens Probability',fontsize=12)
         ax.set_ylabel('Probability Density',fontsize=12)
         ax.set_ylim(ax.get_ylim())

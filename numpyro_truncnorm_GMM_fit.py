@@ -6,7 +6,7 @@ import numpyro
 
 def numpyro_truncnorm_GMM_fit(data,N_comp = 1,num_warmup=1000,num_samples=1000,return_all_samples=False,inf_if_weights_unordered=False):
     def model(data):
-        alpha_mu_dict = {elem:numpyro.sample(f'alpha_mu_{elem}',dist.Uniform(0,5),sample_shape=(1,)) for elem in range(N_comp)}
+        alpha_mu_dict = {elem:numpyro.sample(f'alpha_mu_{elem}',dist.Uniform(0,15),sample_shape=(1,)) for elem in range(N_comp)}
         alpha_scale_dict = {elem:numpyro.sample(f'alpha_scale_{elem}',dist.LogUniform(0.01,5),sample_shape=(1,)) for elem in range(N_comp)}
         simplex_sample = numpyro.sample('alpha_weights',
                                         dist.Dirichlet(concentration=jnp.array([1.0]*N_comp)))

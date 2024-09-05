@@ -683,7 +683,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                     batch_bool=True, wa_const = False, w0_const = False,GMM_zL = False,GMM_zS = False,
                     fixed_GMM = False, GMM_zL_dict = {}, GMM_zS_dict = {},spec_indx = [],no_parent=False,
                     trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False,
-                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False,batch_indx_array=[]
+                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False,batch_indx_array=[],N_dim=1
                     ):
     
     N_batch = len(batch_indx_array)
@@ -761,6 +761,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
         total_prob += jnp.sum(batch_prob_i)
         del batch_prob_i
         gc.collect()
+    total_prob-=jnp.sqrt(N_dim) #Rescaling the likelihood to help convergence.
     L = numpyro.factor("Likelihood",total_prob)
 
 # Code to run the cosmology posterior sampling:
@@ -776,6 +777,7 @@ def run_MCMC(photometric,contaminated,cosmo_type,
             r_true = None,unimodal_beta=True,bimodal_beta=False,
             true_zL_zS_dep=False,N_batch=1):
     print('Random key:',key_int)
+    # assert False #alpha_scale prior is LogUniform not Uniform, so batching is not ok (if I multiply by the prior multiple times)
     # jax.profiler.start_trace("./memory_profiling")
     batch_indx_array = jnp.array_split(jnp.arange(len(zL_obs)),N_batch)
     if unimodal_beta:
@@ -795,7 +797,7 @@ def run_MCMC(photometric,contaminated,cosmo_type,
                 'no_parent':no_parent,'trunc_zL':trunc_zL,'trunc_zS':trunc_zS,
                 'P_tau_dist':P_tau_dist,'sigma_P_tau':sigma_P_tau,'lognorm_parent':lognorm_parent,
                 'unimodal_beta':unimodal_beta,'bimodal_beta':bimodal_beta,'true_zL_zS_dep':true_zL_zS_dep,
-                'batch_indx_array':batch_indx_array}
+                'batch_indx_array':batch_indx_array,'N_dim':len(zL_obs)*3}
     print(f'Model args: {model_args}')
     key = jax.random.PRNGKey(key_int)
     print(f'Target Accept Prob: {target_accept_prob}')
@@ -848,7 +850,16 @@ def run_MCMC(photometric,contaminated,cosmo_type,
     print(f'Saved warmup to {warmup_file}')
     ##
     print("Starting main run:")
-    sampler_0.run(key,**model_args,key=None)
+    N_split = 10
+    for i in range(N_split):
+        sampler_0.post_warmup_state = sampler_0.last_state
+        sampler_0.run(sampler_0.post_warmup_state.rng_key,**model_args,key=None)
+        raw_mcmc_samples = sampler_0.get_samples(group_by_chain=True)
+        print(raw_mcmc_samples.keys())
+        if i!=(N_split-1): #Temporarily deleting these to check it runs ok, though I should definitely save + include them in my chains.
+            del raw_mcmc_samples
+            gc.collect()
+    # sampler_0.run(key,**model_args,key=None)
     print('Finished main run')
     # jax.profiler.stop_trace()
     return sampler_0,[len(batch_indx_array[elem]) for elem in range(N_batch)]

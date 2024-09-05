@@ -12,19 +12,18 @@ import time
 import glob
 import numpy as np
 from convert_ipynb_to_py import save_notebook_as_python_file 
-
-# Saves code each time it is run:
-N_code_backups = np.max([len(glob.glob('./code_backups/mcmcfunctions_SL_JAX*')),
-                         len(glob.glob('./code_backups/zBEAMS_Application_to_Strong_Lensing.py*'))])
-code_backup_time = np.round(time.time(),4)
-code_backup_file = f'./code_backups/mcmcfunctions_SL_JAX_{N_code_backups}_{code_backup_time}.py'
-print(f'Saving code backup to {code_backup_file}')
-with open(code_backup_file,'w') as f:
-    for line in open('./mcmcfunctions_SL_JAX.py'):
-        f.write(line)
-notebook_backup_file = f'./code_backups/zBEAMS_Application_to_Strong_Lensing_{N_code_backups}_{code_backup_time}.py'
-print(f'Saving notebook backup to {notebook_backup_file}')
-save_notebook_as_python_file('./zBEAMS_Application_to_Strong_Lensing.ipynb',notebook_backup_file)
+# import wandb
+import initialise_wandb
+import os
+os.environ['WANDB_API_KEY'] #Checking key exists
+# try:
+#     wandb.init(
+#         # set the wandb project where this run will be logged
+#         project="My_test_project",
+#         # track hyperparameters and run metadata
+#         config={
+#         "test_var":1})
+# except:pass
 
 def argument_parser():
     parser = argparse.ArgumentParser()
@@ -66,6 +65,7 @@ def argument_parser():
     parser.add_argument('--trunc_zS',action='store_true',help='Optional argument truncate zS in the likelihood')
     parser.add_argument('--archive',action='store_true',help='Use archive version of likelihood function, from Github')
     parser.add_argument('--batch_version',action='store_true',help='Use batch version of likelihood function')
+    parser.add_argument('--block_version',action='store_true',help='Use block version of likelihood function')
     parser.add_argument('--N_batch',type=int, default=1, help='Optional argument - how many batches to use, when batch_version==True')
     parser.add_argument('--P_tau_dist',action='store_true',help='Use a distribution for P_tau')
     parser.add_argument('--sigma_P_tau',type=float, default=0.1, help='Sigma for P_tau distribution')
@@ -74,6 +74,11 @@ def argument_parser():
     parser.add_argument('--bimodal_beta', dest='bimodal_beta', type=lambda x:bool(distutils.util.strtobool(x)),default=False)
     parser.add_argument('--true_zL_zS_dep',action='store_true',help='Use true P(zL|zS) relation in the likelihood')
     parser.add_argument('--memory_check',action='store_true',help='Print help')
+    parser.add_argument('--fixed_alpha',action='store_true',help='Use fixed alpha')
+    parser.add_argument('--fixed_beta_gamma',action='store_true',help='Use fixed beta and gamma distributions')
+    parser.add_argument('--P_tau_regular',action='store_true',help='Use regularisation for P_tau distribution')
+    parser.add_argument('--P_tau_regular_factor',type=float, default=0.05, help='Regularisation factor for P_tau distribution')
+    parser.add_argument('--likelihood_scale_factor',action='store_true',help='Use likelihood scale factor to make FP and TPs have likelihoods of similar magnitude')
     args = parser.parse_args()
     return args
 
@@ -110,9 +115,43 @@ true_zL_zS_dep = argv.true_zL_zS_dep
 batch_version = argv.batch_version
 N_batch = argv.N_batch
 memory_check = argv.memory_check
-
+block_version = argv.block_version
+fixed_alpha = argv.fixed_alpha
+P_tau_regular=argv.P_tau_regular
+P_tau_regular_factor=argv.P_tau_regular_factor
+fixed_beta_gamma=argv.fixed_beta_gamma
+likelihood_scale_factor=argv.likelihood_scale_factor
 assert not (unimodal_beta and bimodal_beta) #Can't have both as True.
 import sys
+
+# Saves code each time it is run:
+N_code_backups = np.max([len(glob.glob('./code_backups/mcmcfunctions_SL_JAX*')),
+                         len(glob.glob('./code_backups/zBEAMS_Application_to_Strong_Lensing.py*'))])
+code_backup_time = np.round(time.time(),4)
+if block_version:
+    code_backup_file = f'./code_backups/mcmcfunctions_SL_blockMH_{N_code_backups}_{code_backup_time}.py'
+    print(f'Saving code backup to {code_backup_file}')
+    with open(code_backup_file,'w') as f:
+        for line in open('./mcmcfunctions_SL_blockMH.py'):
+            f.write(line)
+elif batch_version:
+    code_backup_file = f'./code_backups/mcmcfunctions_SL_JAX_batch{N_code_backups}_{code_backup_time}.py'
+    print(f'Saving code backup to {code_backup_file}')
+    with open(code_backup_file,'w') as f:
+        for line in open('./mcmcfunctions_SL_JAX_batch.py'):
+            f.write(line)
+else:
+    code_backup_file = f'./code_backups/mcmcfunctions_SL_JAX_{N_code_backups}_{code_backup_time}.py'
+    print(f'Saving code backup to {code_backup_file}')
+    with open(code_backup_file,'w') as f:
+        for line in open('./mcmcfunctions_SL_JAX.py'):
+            f.write(line)
+
+notebook_backup_file = f'./code_backups/zBEAMS_Application_to_Strong_Lensing_{N_code_backups}_{code_backup_time}.py'
+print(f'Saving notebook backup to {notebook_backup_file}')
+save_notebook_as_python_file('./zBEAMS_Application_to_Strong_Lensing.ipynb',notebook_backup_file)
+
+
 
 #os.environ["JAX_ENABLE_X64"] = 'True'
 import numpyro
@@ -126,6 +165,7 @@ from jax import local_device_count,default_backend,devices
 from zbeamsfunctions_SL import likelihood_SL,likelihood_spec_contam_SL,likelihood_phot_contam_SL,likelihood_phot_SL,r_SL
 from astropy.cosmology import LambdaCDM,FlatLambdaCDM,wCDM,FlatwCDM,w0waCDM
 from zbeamsfunctions import mu_w,likelihood,likelihood_spec
+from numpyro_truncnorm_GMM_fit import numpyro_truncnorm_GMM_fit
 
 # Uses previous version of code (for bug-finding purposes), should be False by default:
 if archive: 
@@ -144,6 +184,14 @@ if batch_version:
         os.environ['JAX_PLATFORMS'] = 'cpu'
         from mcmcfunctions_SL_JAX_batch import j_likelihood_SL,run_MCMC
     print('RUNNING BATCH VERSION')
+elif block_version:
+    try:
+        from mcmcfunctions_SL_blockMH import j_likelihood_SL,run_MCMC
+    except:
+        print('FAILED TO FIND A GPU. DEFAULTING TO USING A CPU.')
+        os.environ['JAX_PLATFORMS'] = 'cpu'
+        from mcmcfunctions_SL_blockMH import j_likelihood_SL,run_MCMC
+    print('RUNNING BLOCK VERSION')
 else:
     try:
         from mcmcfunctions_SL_JAX import j_likelihood_SL,run_MCMC
@@ -157,6 +205,7 @@ from JAX_samples_to_dict import JAX_samples_to_dict
 from mcmcfunctions import mcmc,mcmc_spec,mcmc_phot
 from numpyro import distributions as dist, infer
 from numpyro.infer import MCMC, NUTS, HMC
+from database_checker import run_db_check
 import matplotlib.patches as mpatches
 from mcmcfunctions_SL import mcmc_SL
 from scipy.stats import truncnorm
@@ -193,6 +242,7 @@ if fixed_GMM:
 else:
     GMM_zL_dict = None
     GMM_zS_dict = None
+
 print('ARGS',argv)
 print('Filein',filein,'Contaminated',contaminated,'Photometric',photometric,'Cosmo',cosmo_type)
 print('Num Samples',num_samples,'Num Warmup',num_warmup,'Num Chains',num_chains)
@@ -205,6 +255,46 @@ db_in = pd.read_csv(filein)
 print('DB In:',db_in)
 print(db_in.columns)
 numpyro.enable_x64(True)
+
+run_db_check(filein)
+
+if fixed_alpha:
+    #Values previously based on /mnt/users/hollowayp/zBEAMS/databases/real_paltas_population_TP_100000_FP_100000_Spec_10000_P_0.5.csv
+    # alpha_dict = {'mu':[0.6299770474433899, 0.07905451953411102, 0.34039413928985596],
+    #               'scale':[0.4377945363521576,1.2255791425704956,0.23973476886749268],
+    #               'weights':jnp.array([0.42739158868789673,0.09350378066301346,0.4791046380996704])}
+    # alpha_dict = {'mu':[100,100,100],
+    #               'scale':[0.1,0.1,0.1],
+    #               'weights':jnp.array([0.1,0.1,0.8])}
+    # print('USING PRESET WILD ALPHA DICT')
+    FP_db = db_in[db_in['FP_bool']==1].copy().reset_index(drop=True)
+    alpha_dist_fit = numpyro_truncnorm_GMM_fit(FP_db['r_obs_contam'].to_numpy(),N_comp=3)
+    alpha_dict = {'mu':alpha_dist_fit['list_of_mu'],
+                  'scale':alpha_dist_fit['list_of_sigma'],
+                  'weights':jnp.array(alpha_dist_fit['list_of_weights'])}
+else:
+    alpha_dict = {}
+
+print('fixed_alpha',fixed_alpha,'alpha dict',alpha_dict)
+
+if fixed_beta_gamma:
+    FP_db = db_in[db_in['FP_bool']==1].copy().reset_index(drop=True)
+    beta_dist_fit = numpyro_truncnorm_GMM_fit(FP_db['zL_obs'].to_numpy(),N_comp=1)
+    gamma_dist_fit = numpyro_truncnorm_GMM_fit(FP_db['zS_obs'].to_numpy(),N_comp=1)
+    # beta_dict = {'mu':10,'scale':0.1,'weights':1}
+    # gamma_dict = {'mu':10,'scale':0.1,'weights':1}
+    # print('USING PRESET WILD BETA GAMMA DICT')
+    beta_dict = {'mu':beta_dist_fit['list_of_mu'][0],
+                'scale':beta_dist_fit['list_of_sigma'][0],
+                'weights':beta_dist_fit['list_of_weights'][0]}
+    gamma_dict = {'mu':gamma_dist_fit['list_of_mu'][0],
+                'scale':gamma_dist_fit['list_of_sigma'][0],
+                'weights':gamma_dist_fit['list_of_weights'][0]}
+else:
+    beta_dict = {}
+    gamma_dict = {}
+
+print('fixed_beta_gamma',fixed_beta_gamma,'beta dict',beta_dict,'gamma dict',gamma_dict)
 
 # Use the true redshifts when not allowing for photometry, otherwise this biases the results as the error is already built into zL_/zS_obs:
 if photometric:
@@ -224,7 +314,7 @@ fileout = f'{file_prefix}_{N_chains_saved}_{key_int}_{random_time}.csv' #Will sa
 fileout_warmup = f'{file_prefix}_{N_chains_saved}_{key_int}_{random_time}_warmup.csv' #Will save first one as '_0'.
 print(f'Will be saving file to: {fileout}')
 
-if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.
+# if contaminated: assert (db_in['P_tau']!=1).all() #Otherwise this causes errors in the MCMC.
 
 additional_args = {}
 if not archive:
@@ -244,7 +334,15 @@ if not archive:
                     'r_true':db_in['r_true'].to_numpy(),
                     'unimodal_beta':unimodal_beta,
                     'bimodal_beta':bimodal_beta,
-                    'true_zL_zS_dep':true_zL_zS_dep}
+                    'true_zL_zS_dep':true_zL_zS_dep,
+                    'fixed_alpha':fixed_alpha,
+                    'alpha_dict':alpha_dict,
+                    'fixed_beta_gamma':fixed_beta_gamma,
+                    'beta_dict':beta_dict,
+                    'gamma_dict':gamma_dict,
+                    'P_tau_regular':P_tau_regular,
+                    'P_tau_regular_factor':P_tau_regular_factor,
+                    'likelihood_scale_factor':likelihood_scale_factor}
 if batch_version:
     additional_args['N_batch'] = N_batch
 

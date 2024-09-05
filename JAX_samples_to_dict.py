@@ -8,10 +8,11 @@ def JAX_samples_to_dict(sampler,separate_keys=False,cosmo_type='',wa_const=False
             assert sampler.get_samples()[k_i].shape[1]==1 and len(sampler.get_samples()[k_i].shape)==2
             sample_dict[k_i] = sampler.get_samples()[k_i].T[0]
         if len(N_sys_per_batch)>0:
-            if ('zL' in k_i) or ('zS' in k_i):
+            if ('zL' in k_i) or ('zS' in k_i) or ('P_tau' in k_i):
                 batch_n = int(k_i.split('_B')[-1])
                 if batch_n>0: continue #Don't save any of the later batches
                 assert k_i == f'{k_i.split("_B")[0]}_B{batch_n}'
+                print(k_i,sampler.get_samples(True)[k_i].shape)
                 for c_i in range(sampler.get_samples(True)[k_i].shape[0]): #chain, N_steps, 1, N_sys_per_batch
                     key_label = k_i.split('_B')[0]
                     for z_i in range(sampler.get_samples(True)[k_i].shape[-1]):
@@ -19,6 +20,14 @@ def JAX_samples_to_dict(sampler,separate_keys=False,cosmo_type='',wa_const=False
                         if (key_label=='P_tau') and z_i>=2000: continue
                         n_z_i = int(z_i + np.sum(N_sys_per_batch[:batch_n])) #System number, starting at 0 for first batch, and for later batches starting at the number of previous systems in earlier batches. Batch number starts at 0.
                         sample_dict[f'{key_label}_{n_z_i}_{c_i}'] = sampler.get_samples(True)[k_i][c_i,:,0,z_i]
+            elif k_i=='Ok':
+                print(k_i,sampler.get_samples(True)[k_i].shape)
+                for c_i in range(sampler.get_samples(True)[k_i].shape[0]): #chain, N_steps, 1, N_sys_per_batch
+                    sample_dict[f'{k_i}_{c_i}'] = sampler.get_samples(True)[k_i][c_i,:]
+            else:
+                print(k_i,sampler.get_samples(True)[k_i].shape)
+                for c_i in range(sampler.get_samples(True)[k_i].shape[0]): #chain, N_steps, 1, N_sys_per_batch
+                    sample_dict[f'{k_i}_{c_i}'] = sampler.get_samples(True)[k_i][c_i,:,0]
         else: 
             print(k_i,sampler.get_samples(True)[k_i].shape)
             if k_i not in ['Ok','zL','zS']: 

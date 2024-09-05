@@ -74,6 +74,7 @@ def plot_JAX_corner(sampler_list,
             fig,ax = pl.subplots(len(key_list),len(key_list),figsize=(2.2*len(key_list),2.2*len(key_list)))
         truth_list = [truth_dict[k_i] for k_i in key_list]
         print('TRUTH',truth_list)
+        print('Nans and Inf:',np.sum(np.isnan(corner_samples)).to_numpy(),np.sum(np.isinf(corner_samples).to_numpy()))
         corner.corner(corner_samples,
             #truths=truth_list,
             #truth_color='k',

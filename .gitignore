@@ -25,3 +25,6 @@ code_backups/*
 *vs_code_python114_archive_zBEAMS*
 ./memory_profiling/*
 memory_profiling/*
+initialise_wandb.py
+./wandb/*
+wandb/*

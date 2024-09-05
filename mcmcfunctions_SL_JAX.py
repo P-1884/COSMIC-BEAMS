@@ -47,16 +47,53 @@ def likelihood_PC(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_4a,prob_4b,prob_5a,pr
                        (1-P_tau)*jnp.exp(prob_1b)*jnp.exp(prob_4b)*jnp.exp(prob_5b))+prob_2+prob_3)
 
 @jit
-def likelihood_PC_no_parent(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS): #prob_zL_zS is not logged
+def likelihood_PC_no_parent(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS,prob_FP_zL,prob_FP_zS): #prob_zL_zS is not logged
         # jax.debug.print('Likelihood_pc Output: {a},{b},{c},{d},{e},{f},{g}',a=P_tau,b=jnp.exp(prob_1a),c=(1-P_tau),d=jnp.exp(prob_1b),e=prob_2,f=prob_3,g=prob_zL_zS)
         # jax.debug.print('To be logged {a}',a=jnp.min(P_tau*jnp.exp(prob_1a)+(1-P_tau)*jnp.exp(prob_1b)))
-        likelihood_p1 = P_tau*jnp.exp(prob_1a)*prob_zL_zS
-        likelihood_p2 = (1-P_tau)*jnp.exp(prob_1b)
+        likelihood_p1_0 = jnp.exp(prob_1a+prob_2+prob_3)*prob_zL_zS
+        likelihood_p2_0 = jnp.exp(prob_1b+prob_FP_zL+prob_FP_zS)
+        likelihood_p1 = P_tau*likelihood_p1_0
+        likelihood_p2 = (1-P_tau)*likelihood_p2_0
+        likelihood_prelim = jnp.log(likelihood_p1+likelihood_p2)
+        # jax.debug.print('')
+        # jax.debug.print('Lens Comp,{a}',a=jnp.exp(prob_1a+prob_2+prob_3)*prob_zL_zS)
+        # jax.debug.print('Non-Lens Comp,{a}',a=jnp.exp(prob_1b+prob_FP_zL+prob_FP_zS))
+        # jax.debug.print('prob_1a {a}',a=prob_1a)
+        # jax.debug.print('prob_1b {a}',a=prob_1b)
+        # jax.debug.print('prob_2 {a}',a=prob_2)
+        # jax.debug.print('prob_3 {a}',a=prob_3)
+        # jax.debug.print('prob_zL_zS {a}',a=prob_zL_zS)
+        # jax.debug.print('prob_FP_zL {a}',a=prob_FP_zL)
+        # jax.debug.print('prob_FP_zS {a}',a=prob_FP_zS)
+        # jax.debug.print('P_L {a}',a=P_tau)
+
+        # jax.debug.print('Lens Likelihood {a}',a=jnp.log(likelihood_p1))
+        # jax.debug.print('P_L {b}',b=P_tau)
+        # jax.debug.print('Non-Lens Likelihood {a}',a=jnp.log(likelihood_p2))
+        # jax.debug.print('P_NL {b}',b=1-P_tau)
+        #Accounting for rounding errors - when p1 is zero, can just use the logged version of p2 alone, and vice versa.
+        likelihood_prelim = jnp.where(likelihood_p1==0,jnp.log(1-P_tau)+prob_1b+prob_FP_zL+prob_FP_zS,likelihood_prelim)
+        likelihood_prelim = jnp.where(likelihood_p2==0,jnp.log(P_tau)+prob_1a+prob_2+prob_3+jnp.log(prob_zL_zS),likelihood_prelim)
+        # jax.debug.print('Total,{a}',a=likelihood_prelim)
+        # jax.debug.print('')
+        return likelihood_prelim
+
+@jit
+def likelihood_PC_no_parent_LScale(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS,prob_FP_zL,prob_FP_zS,A_scale): #prob_zL_zS is not logged
+        likelihood_p1_0 = (10**A_scale)*jnp.exp(prob_1a+prob_2+prob_3)*prob_zL_zS
+        likelihood_p2_0 = jnp.exp(prob_1b+prob_FP_zL+prob_FP_zS)
+        # 
+        mean_likelihood_ratio = jnp.log10(jnp.mean(likelihood_p1_0)/jnp.mean(likelihood_p2_0))
+        jax.debug.print('Ratio {a}',a=mean_likelihood_ratio)
+        likelihood_ratio_regularisation = dist.Normal(loc=0,scale=1).log_prob(mean_likelihood_ratio)
+        # 
+        likelihood_p1 = P_tau*likelihood_p1_0
+        likelihood_p2 = (1-P_tau)*likelihood_p2_0
         likelihood_prelim = jnp.log(likelihood_p1+likelihood_p2)
         #Accounting for rounding errors - when p1 is zero, can just use the logged version of p2 alone, and vice versa.
-        likelihood_prelim = jnp.where(likelihood_p1==0,jnp.log(1-P_tau)+prob_1b,likelihood_prelim)
-        likelihood_prelim = jnp.where(likelihood_p2==0,jnp.log(P_tau)+prob_1a+jnp.log(prob_zL_zS),likelihood_prelim)
-        return likelihood_prelim+prob_2+prob_3
+        likelihood_prelim = jnp.where(likelihood_p1==0,jnp.log(1-P_tau)+prob_1b+prob_FP_zL+prob_FP_zS,likelihood_prelim)
+        likelihood_prelim = jnp.where(likelihood_p2==0,jnp.log(P_tau)+prob_1a+prob_2+prob_3+jnp.log(prob_zL_zS),likelihood_prelim)
+        return likelihood_prelim+likelihood_ratio_regularisation
 
 def breakpoint_if_nonfinite(prob,zL,zS,r_theory,OM,Ode,Ok,w,wa):
   is_finite = jnp.isfinite(prob).all()
@@ -80,7 +117,10 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                     batch_bool=True, wa_const = False, w0_const = False,GMM_zL = False,GMM_zS = False,
                     fixed_GMM = False, GMM_zL_dict = {}, GMM_zS_dict = {},spec_indx = [],no_parent=False,
                     trunc_zL=False,trunc_zS=False,P_tau_dist = False,sigma_P_tau = [],lognorm_parent = False,
-                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False):
+                    unimodal_beta=True,bimodal_beta=False,true_zL_zS_dep = False,fixed_alpha=False,alpha_dict = {},
+                    P_tau_regularisation=False,P_tau_regularisation_factor=jnp.nan,
+                    fixed_beta_gamma=False,beta_dict = {},gamma_dict = {},
+                    likelihood_scale_factor=False):
     '''
     Main input args:
     zL_obs: Observed lens redshift
@@ -95,8 +135,11 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
     sigma_P_tau: Width of P_tau distribution, where applicable.
     lognorm_parent: Boolean for whether to include zL vs zS dependence (i.e. P(zS|zL)).
     '''
+    if fixed_alpha: assert len(alpha_dict)>0;assert photometric and contaminated;print('Using fixed FP parent distribution') #Other cases not yet implemented
     if lognorm_parent: assert not GMM_zL and not GMM_zS; assert no_parent
     if P_tau_dist: assert isinstance(sigma_P_tau,float) or len(sigma_P_tau)==len(P_tau_0)
+    N_lens_expect = jnp.sum(P_tau_0)
+    print(f'Number of expected lenses: {N_lens_expect}')
     sigma_r_obs_2 = 100# sigma_r_obs
     # Lens and source redshift parent hyperparameters
     mu_zL_g_L=None;mu_zS_g_L = None # For true lenses 
@@ -540,10 +583,32 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
         # alpha_mu_2 = jnp.squeeze(numpyro.sample("alpha_mu_2", dist.Uniform(0,2),sample_shape=(1,),rng_key=key))
         # alpha_scale_2 = jnp.squeeze(numpyro.sample("alpha_scale_2", dist.Uniform(0.01,5),sample_shape=(1,),rng_key=key))
         # alpha_w = jnp.squeeze(numpyro.sample("alpha_w", dist.Uniform(0,1),sample_shape=(1,),rng_key=key))
-        N_comp = 3
-        alpha_mu_dict = {elem:numpyro.sample(f'alpha_mu_{elem}',dist.Uniform(0,2),sample_shape=(1,)) for elem in range(N_comp)}
-        alpha_scale_dict = {elem:numpyro.sample(f'alpha_scale_{elem}',dist.LogUniform(0.01,5),sample_shape=(1,)) for elem in range(N_comp)}
-        simplex_sample = numpyro.sample('alpha_weights',dist.Dirichlet(concentration=jnp.array([1.0]*N_comp)))
+        if fixed_alpha:
+            N_comp = len(alpha_dict['mu'])
+            alpha_mu_dict = {elem:numpyro.deterministic(f'alpha_mu_{elem}',alpha_dict['mu'][elem]) for elem in range(N_comp)}
+            alpha_scale_dict = {elem:numpyro.deterministic(f'alpha_scale_{elem}',alpha_dict['scale'][elem]) for elem in range(N_comp)}
+            simplex_sample = numpyro.deterministic('alpha_weights',alpha_dict['weights'])
+        else:
+            N_comp = 3
+            alpha_mu_dict = {elem:numpyro.sample(f'alpha_mu_{elem}',dist.Uniform(0,2),sample_shape=(1,)) for elem in range(N_comp)}
+            alpha_scale_dict = {elem:numpyro.sample(f'alpha_scale_{elem}',dist.Uniform(0.01,5),sample_shape=(1,)) for elem in range(N_comp)}
+            simplex_sample = numpyro.sample('alpha_weights',dist.Dirichlet(concentration=jnp.array([1.0]*N_comp)))
+        if True:
+            if fixed_beta_gamma:
+                beta_mu = numpyro.deterministic('beta_mu',beta_dict['mu'])
+                beta_scale = numpyro.deterministic('beta_scale',beta_dict['scale'])
+                gamma_mu = numpyro.deterministic('gamma_mu',gamma_dict['mu'])
+                gamma_scale = numpyro.deterministic('gamma_scale',gamma_dict['scale'])
+            else:
+                #zL distribution for FP's:
+                beta_mu = numpyro.sample('beta_mu',dist.Uniform(0,2),sample_shape=(1,))
+                beta_scale = numpyro.sample('beta_scale',dist.Uniform(0.01,5),sample_shape=(1,))
+                #zS distribution for FP's:
+                gamma_mu = numpyro.sample('gamma_mu',dist.Uniform(0,5),sample_shape=(1,))
+                gamma_scale = numpyro.sample('gamma_scale',dist.Uniform(0.01,5),sample_shape=(1,))
+        if likelihood_scale_factor:
+            A_scale = numpyro.sample('A_scale',dist.Uniform(-10,10),sample_shape=(1,))
+        else: A_scale = 0
         def photometric_and_contaminated_likelihood(r_obs,sigma_r_obs,r_theory,
                                             # r_obs_spec,sigma_r_obs_spec,r_theory_spec, NOT Implemented yet
                                             zL_obs,zS_obs,
@@ -560,6 +625,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                                             sigma_01_g_L=None,sigma_10_g_L=None,
                                             sigma_01_g_NL=None,sigma_10_g_NL=None):
             #assert False #Where am I truncating zS in the likelihood - at 0 or at zL?
+            # jax.debug.print('r_theory,{a}',a=r_theory)
             prob_1a = jax_truncnorm.logpdf(x=r_obs,loc=r_theory, scale=sigma_r_obs,a=-r_theory/sigma_r_obs,b=np.inf)
             # prob_1a = dist.TruncatedNormal(r_theory, sigma_r_obs,low = 0).log_prob(r_obs)
             # prob_1a = jnp.where(r_obs<0,-np.inf,prob_1a)
@@ -613,6 +679,9 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                     prob_5b = jnp.where(zS<zL,-np.inf,prob_5b)
                 # prob_4a = MVN_samp(mu_zL_g_L,mu_zS_g_L,sigma_zL_g_L,sigma_zS_g_L,zL,zS,sigma_01_g_L,sigma_10_g_L)
                 # prob_4b = MVN_samp(mu_zL_g_NL,mu_zS_g_NL,sigma_zL_g_NL,sigma_zS_g_NL,zL,zS,sigma_01_g_NL,sigma_10_g_NL)
+            if True:
+                prob_FP_zL = jax_truncnorm.logpdf(x=zL_obs,loc=beta_mu, scale=beta_scale,a=-beta_mu/beta_scale,b=np.inf)
+                prob_FP_zS = jax_truncnorm.logpdf(x=zS_obs,loc=gamma_mu, scale=gamma_scale,a=-gamma_mu/gamma_scale,b=np.inf)
             '''
             Seems to be a problem with very small numbers - can cope if I increase the precision but still with only very small numbers of 
             systems => Problem fixed by having P_tau!=1.0 (even 0.9 fixed it).
@@ -631,7 +700,18 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             if no_parent: 
                 # jax.debug.print('Likelihood Outputs: {a},{b},{c},{d} {e}',a=jnp.sum(prob_1a),b=jnp.sum(prob_1b),c=jnp.sum(prob_2),d=jnp.sum(prob_3),e=jnp.sum(prob_zL_zS))
                 # jax.debug.print('P_tau,{P_tau}',P_tau=P_tau)
-                prob =  likelihood_PC_no_parent(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS) #prob_zL_zS is not logged
+                # jax.debug.print('P_tau, {a}',a=P_tau)
+                # jax.debug.print('prob_1a, {prob_1a}',prob_1a=prob_1a)
+                # jax.debug.print('prob_1b, {prob_1b}',prob_1b=prob_1b)
+                # jax.debug.print('prob_2, {prob_2}',prob_2=prob_2)
+                # jax.debug.print('prob_3, {prob_3}',prob_3=prob_3)
+                # jax.debug.print('prob_zL_zS, {prob_zL_zS}',prob_zL_zS=prob_zL_zS)
+                # jax.debug.print('prob_FP_zL, {prob_FP_zL}',prob_FP_zL=prob_FP_zL)
+                # jax.debug.print('prob_FP_zS, {prob_FP_zS}',prob_FP_zS=prob_FP_zS)
+                if likelihood_scale_factor:
+                    prob = likelihood_PC_no_parent_LScale(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS,prob_FP_zL,prob_FP_zS,A_scale) #prob_zL_zS is not logged
+                else:
+                    prob =  likelihood_PC_no_parent(P_tau,prob_1a,prob_1b,prob_2,prob_3,prob_zL_zS,prob_FP_zL,prob_FP_zS) #prob_zL_zS is not logged
             else: 
                 # jax.debug.print('Likelihood Outputs: {a},{b},{c},{d},{e},{f},{g},{h}',
                                 # a=jnp.sum(prob_1a),b=jnp.sum(prob_1b),c=jnp.sum(prob_2),
@@ -644,6 +724,8 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
             # jax.debug.print('Likelihood {p}',p=jnp.sum(prob))
             # jax.debug.print('Likelihood {p}',p=prob)
             # jax.debug.print('OM: {a}',a=OM)
+            if P_tau_regularisation:
+                prob = prob + dist.Normal(loc=N_lens_expect,scale=P_tau_regularisation_factor*N_lens_expect).log_prob(jnp.sum(P_tau))
             return prob                                             
         if batch_bool:
             with numpyro.plate("N", zL_obs.shape[0], subsample_size = subsample_size):
@@ -690,6 +772,7 @@ def j_likelihood_SL(zL_obs,zS_obs,sigma_zL_obs,sigma_zS_obs,r_obs,sigma_r_obs,si
                                             sigma_01_g_L=sigma_01_g_L,sigma_10_g_L=sigma_10_g_L,
                                             sigma_01_g_NL=sigma_01_g_NL,sigma_10_g_NL=sigma_10_g_NL)
         if likelihood_check: return prob
+        # jax.debug.print('Total Prob {a}',a=jnp.sum(prob))
         L = numpyro.factor("Likelihood",prob)
     else:
         print('Assuming not contaminated, with spectroscopic redshifts')
@@ -733,8 +816,12 @@ def run_MCMC(photometric,contaminated,cosmo_type,
             no_parent=False,initialise_to_truth=False,trunc_zL=False,trunc_zS=False,
             P_tau_dist=False,sigma_P_tau = None,lognorm_parent=False,
             r_true = None,unimodal_beta=True,bimodal_beta=False,
-            true_zL_zS_dep=False):
+            true_zL_zS_dep=False,alpha_dict={},fixed_alpha=False,
+            fixed_beta_gamma=False,beta_dict={},gamma_dict={},
+            P_tau_regular=False,P_tau_regular_factor=np.nan,
+            likelihood_scale_factor=False):
     print('Random key:',key_int)
+    # assert False #Just a reminder - alpha_scale prior is LogUniform not Uniform, so batching is not ok.
     if unimodal_beta:
         print('USING MAXIMUM (AND POSSIBLY VARYING) SIGMA_P_TAU POSSIBLE')
         sigma_P_tau = beta_class().max_sigma_for_unimodal_beta(P_tau_0)
@@ -751,18 +838,22 @@ def run_MCMC(photometric,contaminated,cosmo_type,
                 'GMM_zL_dict':GMM_zL_dict,'GMM_zS_dict':GMM_zS_dict,'fixed_GMM':fixed_GMM,
                 'no_parent':no_parent,'trunc_zL':trunc_zL,'trunc_zS':trunc_zS,
                 'P_tau_dist':P_tau_dist,'sigma_P_tau':sigma_P_tau,'lognorm_parent':lognorm_parent,
-                'unimodal_beta':unimodal_beta,'bimodal_beta':bimodal_beta,'true_zL_zS_dep':true_zL_zS_dep}
+                'unimodal_beta':unimodal_beta,'bimodal_beta':bimodal_beta,'true_zL_zS_dep':true_zL_zS_dep,
+                'alpha_dict':alpha_dict,'fixed_alpha':fixed_alpha,
+                'fixed_beta_gamma':fixed_beta_gamma,'beta_dict':beta_dict,'gamma_dict':gamma_dict,
+                'P_tau_regularisation':P_tau_regular,'P_tau_regularisation_factor':P_tau_regular_factor,
+                'likelihood_scale_factor':likelihood_scale_factor}
     print(f'Model args: {model_args}')
     key = jax.random.PRNGKey(key_int)
     print(f'Target Accept Prob: {target_accept_prob}')
     print(f'Batch bool: {batch_bool}')
-    st = time.time()
-    j_likelihood_SL(**model_args,key=key,early_return=True)
-    mt=time.time()
-    j_likelihood_SL(**model_args,key=key,early_return=True)
-    et=time.time()
-    print('Uncompiled time',mt-st)
-    print('Compiled time',et-mt)
+    # st = time.time()
+    # j_likelihood_SL(**model_args,key=key,early_return=True)
+    # mt=time.time()
+    # j_likelihood_SL(**model_args,key=key,early_return=True)
+    # et=time.time()
+    # print('Uncompiled time',mt-st)
+    # print('Compiled time',et-mt)
     #USEFUL LINK REGARDING SPEEDING UP NUTS AND HMCECS:
     #https://forum.pyro.ai/t/scalability-of-hmcecs/5349/12
     if initialise_to_truth:
@@ -787,7 +878,7 @@ def run_MCMC(photometric,contaminated,cosmo_type,
         outer_kernel = HMCECS(inner_kernel, num_blocks=100)
     else:
         # print('USING DENSE MASS')
-        outer_kernel =  NUTS(model = j_likelihood_SL,target_accept_prob = target_accept_prob,init_strategy=init_strategy)#,dense_mass=True)
+        outer_kernel =  NUTS(model = j_likelihood_SL,target_accept_prob = target_accept_prob,init_strategy=init_strategy)#,dense_mass=True)#,forward_mode_differentiation=True)
     sampler_0 = MCMC(outer_kernel,
                     num_warmup=num_warmup,
                     num_samples=num_samples,
