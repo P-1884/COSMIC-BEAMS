@@ -1,6 +1,6 @@
 # COSMIC-BEAMS
 
-**COSMIC-BEAMS** (**CO**smology using **S**trong lensing **M**easurements **I**ncluding **C**ontamination – **B**ayesian **E**stimation **A**pplied to **M**ultiple **S**pecies) is a Bayesian framework for inferring cosmological parameters from **photometric and impure samples of strong gravitational lenses**.
+**COSMIC-BEAMS** (**CO**smology using **S**trong lensing **M**easurements **I**ncluding **C**ontamination – **B**ayesian **E**stimation **A**pplied to **M**ultiple **S**pecies) is a Bayesian framework for inferring cosmological parameters from photometric and impure samples of strong gravitational lenses.
 
 The original code was taken from [zBEAMS](https://github.com/MichelleLochner/zBEAMS/tree/master), though has been substantially rewritten for the strong lensing case.
 
