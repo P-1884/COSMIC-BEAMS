@@ -13,7 +13,7 @@ The repository is organised as follows:
 | `run_COSMIC_BEAMS.py` | Main entry point for running COSMIC-BEAMS. Specifies the input data and optional keyword arguments for configuring the likelihood and inference. |
 | `mcmcfunctions_SL_JAX_margin_public.py` | Contains the likelihood functions and MCMC sampling routines. |
 | `cosmology_JAX_(flat)_public.py` | JAX implementations of the cosmology functions used within the likelihood. |
-| `Lenstronomy_Cosmology/` | Additional cosmology functions used to validate the JAX cosmology implementation. |
+| `Lenstronomy_Cosmology.py` | Additional cosmology functions used to validate the JAX cosmology implementation. |
 | `numpyro_truncnorm_GMM_fit_public.py` | Fits a truncated Gaussian Mixture Model (GMM) to data using NumPyro. |
 | `LogNormal_Distribution_Class.py` | JAX implementation of a log-normal probability distribution. |
 
