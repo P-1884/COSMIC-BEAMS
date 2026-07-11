@@ -20,7 +20,6 @@ import sys
 import jax
 import time
 from jax.scipy.stats import truncnorm as jax_truncnorm
-from Beta_Distribution_Class import beta_class
 from LogNormal_Distribution_Class import jax_lognormal 
 from cosmology_JAX_public import j_r_SL
 from cosmology_JAX_flat_public import j_r_SL as j_r_SL_flat
@@ -202,8 +201,10 @@ def j_likelihood_SL(#See comments below for parameter definitions.
             r_theory = jnp.array([[j_r_SL(adjusted_zL_array[elem_zL][elem_zS],
                                           adjusted_zS_array[elem_zL][elem_zS],cosmo) for elem_zS in range(len(zS_array))] for elem_zL in range(len(zL_array))])
     else: 
-        if cosmo_type in ['FlatLambdaCDM','FlatwCDM']: r_theory = jnp.array(j_r_SL_flat(zL,zS,cosmo))
-        else: r_theory = jnp.array(j_r_SL(zL,zS,cosmo))
+        if cosmo_type in ['FlatLambdaCDM','FlatwCDM']: 
+            r_theory = jnp.array(j_r_SL_flat(zL,zS,cosmo))
+        else: 
+            r_theory = jnp.array(j_r_SL(zL,zS,cosmo))
     if early_return: return
     if contaminated:
         P_tau = P_tau_0
