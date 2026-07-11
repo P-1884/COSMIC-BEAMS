@@ -22,11 +22,6 @@ def D_LS_astr(zL,zS,cosmo):
     D_LS = LensCosmo_i.dds
     return D_LS
 
-def j_r_SL(zL,zS,j_cosmo): 
-    D_LS = j_D_LS(zL,zS,j_cosmo)
-    D_S = j_D_S(zS,j_cosmo)
-    return D_LS/D_S
-
 def r_SL_astr(zL,zS,cosmo):
     LensCosmo_i = LensCosmo(z_lens=zL,z_source=zS,cosmo=cosmo)
     D_LS = LensCosmo_i.dds
