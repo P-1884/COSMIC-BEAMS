@@ -25,4 +25,4 @@ This project is licensed under the [MIT License](https://choosealicense.com/lice
 
 If you use COSMIC-BEAMS in your research, please cite:
 
-> Holloway et al. (2026, in preparation)
+> Holloway et al. (2026, https://arxiv.org/abs/2609.21699)
